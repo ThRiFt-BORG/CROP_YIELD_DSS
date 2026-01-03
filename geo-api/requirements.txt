@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+gunicorn
+rasterio
+rio-tiler
+geopandas
+pystac-client
+requests
+sqlalchemy
+pymysql
+geoalchemy2
+Pillow

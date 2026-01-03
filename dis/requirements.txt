@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+gunicorn
+rasterio
+pystac
+requests
+boto3
+Pillow
+sqlalchemy
+pymysql
+geoalchemy2

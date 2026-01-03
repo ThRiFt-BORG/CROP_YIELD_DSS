@@ -1,0 +1,5 @@
+upload
+node_modules
+frontend/node_modules
+database/init_mysql.sql
+sandbox.txt

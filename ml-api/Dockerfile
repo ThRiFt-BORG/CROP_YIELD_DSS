@@ -22,7 +22,7 @@ COPY ml-api/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the application code
-COPY . .
+COPY ml-api .
 COPY shared /app/shared
 
 # Expose the port the application runs on

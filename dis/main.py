@@ -1,6 +1,6 @@
 from fastapi import FastAPI, File, UploadFile, Form, Depends, HTTPException
 from shared.models.api_models import IngestMetadata, IngestResponse
-from dis.app.ingestion.processors import process_and_ingest_raster
+from app.ingestion.processors import process_and_ingest_raster
 from shared.database.base import get_db
 from sqlalchemy.orm import Session
 
@@ -39,7 +39,7 @@ async def ingest_raster(
         return IngestResponse(
             message="Raster successfully processed, uploaded, and cataloged.",
             asset_url=asset_url,
-            asset_id=asset_id
+            asset_id=asset_id if isinstance(asset_id, int) else asset_id.value
         )
     except HTTPException as e:
         raise e

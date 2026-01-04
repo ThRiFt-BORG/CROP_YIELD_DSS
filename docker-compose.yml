@@ -1,108 +1,93 @@
-
 services:
-  # 1. PostGIS Database Service (for application data)
+
+  python-base:
+    build:
+      context: .
+      dockerfile: docker/python-base.Dockerfile
+    image: crop-python-base
+
+  python-geo-base:
+    build:
+      context: .
+      dockerfile: docker/python-geo-base.Dockerfile
+    image: crop-python-geo-base
+    depends_on:
+      - python-base
+
+  python-wheels:
+    build:
+      context: .
+      dockerfile: docker/python-wheels.Dockerfile
+    image: crop-python-wheels
+    depends_on:
+      - python-geo-base
+
   postgres:
     image: postgis/postgis:16-3.4
-    pull_policy: never
     container_name: dss_postgres
-    restart: always
     environment:
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
       POSTGRES_DB: dss_db
-    volumes:
-      # Use the PostGIS initialization script
-      - ./database/init_postgis.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
       - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d dss_db"]
 
-  # 2. Minio S3-like Storage (for COG files)
   minio:
     image: quay.io/minio/minio:RELEASE.2023-10-25T06-33-25Z
-    pull_policy: never
-    container_name: minio_s3
-    restart: always
     ports:
       - "9000:9000"
       - "9001:9001"
-    environment:
-      MINIO_ROOT_USER: minio_user
-      MINIO_ROOT_PASSWORD: minio_password
-      MINIO_BROWSER_REDIRECT_URL: http://localhost:9001
-    volumes:
-      - minio_data:/data
     command: server /data --console-address ":9001"
 
-  # 3. Geo-API Service
   geo-api:
     build:
       context: .
       dockerfile: geo-api/Dockerfile
-    container_name: geo_api
-    restart: always
-    volumes:
-      - ./backend/DATA:/app/DATA # For local COG access simulation
-    environment:
-      DATABASE_URL: postgresql+psycopg2://user:password@postgres/dss_db
-      ML_API_URL: http://ml-api:8000
-      MINIO_ENDPOINT: http://minio:9000
-      MINIO_ACCESS_KEY: minio_user
-      MINIO_SECRET_KEY: minio_password
+    depends_on:
+      python-wheels:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
     ports:
       - "8000:8000"
-    depends_on:
-      - postgres # FIX 1: Must depend on 'postgres', not 'mysql'
-      - ml-api
-      - minio
 
-  # 4. ML-API Service
   ml-api:
     build:
       context: .
       dockerfile: ml-api/Dockerfile
-    container_name: ml_api
-    restart: always
-    environment:
-      DATABASE_URL: postgresql+psycopg2://user:password@postgres/dss_db
-    ports:
-      - "8001:8000" # FIX 2: Port mapping should be 8001:8000 (Host:Container )
     depends_on:
-      - postgres # FIX 1: Must depend on 'postgres', not 'mysql'
+      python-wheels:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8001:8000"
 
-  # 5. DIS (Data Ingestion Service)
   dis:
     build:
       context: .
       dockerfile: dis/Dockerfile
-    container_name: dis_service
-    restart: always
-    environment:
-      DATABASE_URL: postgresql+psycopg2://user:password@postgres/dss_db
-      MINIO_ENDPOINT: http://minio:9000
-      MINIO_ACCESS_KEY: minio_user
-      MINIO_SECRET_KEY: minio_password
-      S3_BUCKET_NAME: dss-cogs
+    depends_on:
+      python-wheels:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
     ports:
       - "8002:8000"
-    depends_on:
-      - postgres # FIX 1: Must depend on 'postgres', not 'mysql'
-      - minio
 
-  # 6. Frontend Service
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile
-    container_name: frontend_app
-    restart: always
-    environment:
-      # FIX 3: Must use the container name and port for the Geo-API, not localhost
-      VITE_GEO_API_URL: http://geo-api:8000/v1
     ports:
-      - "3000:80" # FIX 4: Frontend is served by Nginx on port 80 (as per Dockerfile )
+      - "3000:80"
     depends_on:
       - geo-api
 
 volumes:
   minio_data:
-  # FIX 5: Remove mysql_data volume as we are no longer using MySQL

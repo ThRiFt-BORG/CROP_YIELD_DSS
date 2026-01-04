@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .app.routers.geo_router import router as geo_router
+from geo_api.app.routers.geo_router import router as geo_router
 import os
 
 # Initialize FastAPI app

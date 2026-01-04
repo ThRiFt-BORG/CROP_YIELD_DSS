@@ -1,8 +1,8 @@
-FROM crop-python-geo-base
+FROM crop-python-geo-base:latest
 
 WORKDIR /app
 
-COPY --from=crop-python-wheels /wheels /wheels
+COPY --from=crop-python-wheels:latest /wheels /wheels
 COPY dis/requirements.txt .
 
 RUN pip install --no-index --find-links=/wheels -r requirements.txt

@@ -7,7 +7,7 @@ from sqlalchemy import create_engine, text
 import os
 
 # Configuration
-DATABASE_URL = os.getenv("", "mysql+pymysql://user:password@mysql/dss_db")
+DATABASE_URL = os.getenv("", "postgresql+psycopg2://user:password@postgres/dss_db")
 MODEL_PATH = "ml-api/app/models/trained_model.joblib"
 
 def generate_dummy_features(n_samples=100):

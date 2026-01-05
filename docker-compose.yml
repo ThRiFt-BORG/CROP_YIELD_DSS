@@ -1,27 +1,7 @@
 services:
-  # =========================================================
-  # 🔹 BASE BUILD IMAGES (BUILD ONLY – NOT RUNTIME SERVICES)
-  # =========================================================
-
-  python-base:
-    image: crop-python-base:latest
-    pull_policy: never
-    build:
-      context: .
-      dockerfile: docker/python-base.Dockerfile
-
-  python-geo-base:
-    image: crop-python-geo-base:latest
-
-    pull_policy: never
-    build:
-      context: .
-      dockerfile: docker/python-geo-base.Dockerfile
-
-  # =========================================================
-  # 🔹 INFRASTRUCTURE
-  # =========================================================
-
+  # ===============================
+  # Infrastructure
+  # ===============================
   postgres:
     image: postgis/postgis:16-3.4
     container_name: dss_postgres
@@ -39,6 +19,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+      start_period: 30s # Add this: gives it 30s of grace time before checking
+
 
   minio:
     image: quay.io/minio/minio:RELEASE.2023-10-25T06-33-25Z
@@ -54,16 +36,21 @@ services:
       - "9000:9000"
       - "9001:9001"
 
-  # =========================================================
-  # 🔹 APPLICATION SERVICES
-  # =========================================================
-
+  # ===============================
+  # APIs
+  # ===============================
   geo-api:
-    container_name: geo_api
-    restart: always
     build:
       context: .
       dockerfile: geo-api/Dockerfile
+      network: host # <--- Correctly Indented Now
+    container_name: geo_api
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
     environment:
       DATABASE_URL: postgresql+psycopg2://user:password@postgres/dss_db
       ML_API_URL: http://ml-api:8000
@@ -74,32 +61,34 @@ services:
       - ./backend/DATA:/app/DATA
     ports:
       - "8000:8000"
+
+  ml-api:
+    build:
+      context: .
+      dockerfile: ml-api/Dockerfile
+      network: host # <--- Correctly Indented Now
+    container_name: ml_api
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg2://user:password@postgres/dss_db
+    ports:
+      - "8001:8000"
+
+  dis:
+    build:
+      context: .
+      dockerfile: dis/Dockerfile
+      network: host # <--- Correctly Indented Now
+    container_name: dis_service
+    restart: always
     depends_on:
       postgres:
         condition: service_healthy
       minio:
         condition: service_started
-
-  ml-api:
-    container_name: ml_api
-    restart: always
-    build:
-      context: .
-      dockerfile: ml-api/Dockerfile
-    environment:
-      DATABASE_URL: postgresql+psycopg2://user:password@postgres/dss_db
-    ports:
-      - "8001:8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-  dis:
-    container_name: dis_service
-    restart: always
-    build:
-      context: .
-      dockerfile: dis/Dockerfile
     environment:
       DATABASE_URL: postgresql+psycopg2://user:password@postgres/dss_db
       MINIO_ENDPOINT: http://minio:9000
@@ -108,31 +97,22 @@ services:
       S3_BUCKET_NAME: dss-cogs
     ports:
       - "8002:8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      minio:
-        condition: service_started
 
-  # =========================================================
-  # 🔹 FRONTEND
-  # =========================================================
-
+  # ===============================
+  # Frontend
+  # ===============================
   frontend:
-    container_name: frontend_app
-    restart: always
     build:
       context: ./frontend
+      network: host # <--- Correctly Indented Now
+    container_name: frontend_app
+    restart: always
     environment:
       VITE_GEO_API_URL: http://geo-api:8000/v1
     ports:
       - "3000:80"
     depends_on:
       - geo-api
-
-# =========================================================
-# 🔹 VOLUMES
-# =========================================================
 
 volumes:
   minio_data:

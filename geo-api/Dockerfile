@@ -1,18 +1,27 @@
-FROM crop-python-geo-base:latest
+# ===============================
+# Wheels builder
+# ===============================
+FROM crop-dss-base AS wheels
 
-WORKDIR /app
+# Set GDAL environment variables for the build
+ENV GDAL_CONFIG=/usr/bin/gdal-config \
+    CPLUS_INCLUDE_PATH=/usr/include/gdal \
+    C_INCLUDE_PATH=/usr/include/gdal
 
-COPY --from=crop-python-wheels:latest /wheels /wheels
+RUN python -m pip install --upgrade pip setuptools wheel
+
+# PRE-INSTALL build dependencies manually with high timeout
+RUN pip install --timeout 120 --retries 10 \
+    "setuptools>=67.8" \
+    "wheel" \
+    "cython~=3.1.0" \
+    "numpy>=2.0.0"
+
 COPY geo-api/requirements.txt .
 
-RUN pip install --no-index --find-links=/wheels -r requirements.txt
-
-COPY geo-api .
-COPY shared /app/shared
-
-ENV GUNICORN_WORKERS=3
-
-CMD gunicorn main:app \
-  --workers ${GUNICORN_WORKERS} \
-  --worker-class uvicorn.workers.UvicornWorker \
-  --bind 0.0.0.0:8000
+# Build wheels with isolation turned off
+RUN pip wheel --no-cache-dir --wheel-dir=/wheels \
+    --timeout 120 --retries 10 \
+    --no-build-isolation \
+    --no-binary rasterio \
+    -r requirements.txt

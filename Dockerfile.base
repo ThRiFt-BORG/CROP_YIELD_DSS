@@ -1,0 +1,29 @@
+FROM python:3.11-slim-bookworm
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    CPLUS_INCLUDE_PATH=/usr/include/gdal \
+    C_INCLUDE_PATH=/usr/include/gdal \
+    GDAL_CONFIG=/usr/bin/gdal-config \
+    # This helps rasterio find the version during install
+    GDAL_VERSION=3.6.2 
+
+
+# Completely rewrite the sources list to use a reliable CDN mirror
+# This avoids the "10.0.0.1" interference and the "Unexpected Size" error
+RUN echo "deb http://cdn-fastly.deb.debian.org/debian bookworm main" > /etc/apt/sources.list && \
+    echo "deb http://cdn-fastly.deb.debian.org/debian bookworm-updates main" >> /etc/apt/sources.list && \
+    echo "deb http://security.debian.org/debian-security bookworm-security main" >> /etc/apt/sources.list
+
+# We use --network=host in the build command later, but let's try a clean update here
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    gcc \
+    g++ \
+    curl \
+    libgdal-dev \
+    gdal-bin \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app

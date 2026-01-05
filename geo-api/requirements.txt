@@ -4,7 +4,7 @@ gunicorn
 rasterio
 rio-tiler
 psycopg2-binary
-
+shapely
 geopandas
 pystac-client
 requests

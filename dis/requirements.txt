@@ -5,9 +5,8 @@ rasterio
 pystac
 requests
 boto3
-
+shapely
 psycopg2-binary
-
 Pillow
 sqlalchemy
 pymysql

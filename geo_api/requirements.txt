@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+gunicorn
+rasterio
+rio-tiler
+psycopg2-binary
+shapely
+geopandas
+pystac-client
+requests
+sqlalchemy
+pymysql
+geoalchemy2
+Pillow
+python-multipart

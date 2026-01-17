@@ -6,8 +6,8 @@ This project implements a microservices-based architecture for crop yield modeli
 
 The system is a monorepo containing four microservices and a React frontend, orchestrated by Docker Compose:
 
-1.  **Geo-API**: Python FastAPI service for geospatial queries, feature extraction, and ML orchestration.
-2.  **ML-API**: Python FastAPI service for yield prediction inference.
+1.  **geo_api**: Python FastAPI service for geospatial queries, feature extraction, and ML orchestration.
+2.  **ml_api**: Python FastAPI service for yield prediction inference.
 3.  **DIS (Data Ingestion Service)**: Python FastAPI service for raster processing (COG conversion) and cataloging.
 4.  **Frontend**: React/TypeScript application for visualization and user interaction.
 5.  **Database**: MySQL 8.0+ (with spatial support) for all application and metadata storage.
@@ -35,7 +35,7 @@ docker-compose up --build
 ```
 
 This command performs the following:
-*   Builds the Python services (Geo-API, ML-API, DIS) with necessary geospatial libraries (GDAL, GEOS).
+*   Builds the Python services (geo_api, ml_api, DIS) with necessary geospatial libraries (GDAL, GEOS).
 *   Starts the MySQL container, which runs `database/init_mysql.sql` to create tables and insert sample data.
 *   Starts the Minio container for S3 simulation.
 *   Starts the Frontend development server.
@@ -43,8 +43,8 @@ This command performs the following:
 ### 3. Access the Application
 
 *   **Frontend**: Access the application in your browser at `http://localhost:3000`
-*   **Geo-API Docs**: `http://localhost:8000/docs`
-*   **ML-API Docs**: `http://localhost:8001/docs`
+*   **geo_api Docs**: `http://localhost:8000/docs`
+*   **ml_api Docs**: `http://localhost:8001/docs`
 *   **DIS Docs**: `http://localhost:8002/docs`
 *   **Minio Console**: `http://localhost:9001` (User: `minio_user`, Pass: `minio_password`)
 

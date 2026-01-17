@@ -4,5 +4,5 @@ frontend/node_modules
 database/init_mysql.sql
 sandbox.txt
 .venv
-ml-api/Data
+ml_api/Data
 frontend_backup

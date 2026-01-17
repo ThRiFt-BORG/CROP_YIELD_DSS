@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+gunicorn
+scikit-learn
+numpy
+joblib
+pandas
+sqlalchemy
+pymysql
+geoalchemy2
+psycopg2-binary
+shapely
+python-multipart
+DSSATTools

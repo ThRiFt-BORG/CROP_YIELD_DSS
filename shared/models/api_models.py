@@ -12,7 +12,7 @@ class DateRange(BaseModel):
     start: str = Field(..., description="Start date (YYYY-MM-DD).")
     end: str = Field(..., description="End date (YYYY-MM-DD).")
 
-# --- Geo-API Models ---
+# --- geo_api Models ---
 
 class QueryPointRequest(BaseModel):
     point: Point
@@ -31,7 +31,7 @@ class QueryPointResponse(BaseModel):
     features: List[Feature]
     time_series: List[TimeSeriesData]
 
-# --- ML-API Models ---
+# --- ml_api Models ---
 
 class PredictRequest(BaseModel):
     features: dict = Field(..., description="Dictionary of features for prediction.")

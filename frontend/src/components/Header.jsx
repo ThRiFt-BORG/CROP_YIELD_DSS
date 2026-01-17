@@ -15,11 +15,11 @@ export default function Header({ apiStatus, onRefresh }) {
           <div className="status-indicators">
             <div className={`status-indicator ${apiStatus.geo ? '' : 'offline'}`}>
               <div className="status-dot"></div>
-              <span>Geo-API</span>
+              <span>geo_api</span>
             </div>
             <div className={`status-indicator ${apiStatus.ml ? '' : 'offline'}`}>
               <div className="status-dot"></div>
-              <span>ML-API</span>
+              <span>ml_api</span>
             </div>
             <div className={`status-indicator ${apiStatus.dis ? '' : 'offline'}`}>
               <div className="status-dot"></div>

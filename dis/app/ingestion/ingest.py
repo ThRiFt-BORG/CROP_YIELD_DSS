@@ -2,7 +2,7 @@ import requests
 import json
 #Configuration
 dis_url = "http://localhost:8002/v1/ingest"
-FILE_PATH = r"D:\WORK\CROP_DSS\CROP_YIELD_DSS\ml-api\Data\Trans Nzoia\trans_nzoia_predictor_stack_2024.tif"
+FILE_PATH = r"D:\WORK\CROP_DSS\CROP_YIELD_DSS\ml_api\Data\Trans Nzoia\trans_nzoia_predictor_stack_2024.tif"
 
 #Metadata for the sytem
 metadata = {

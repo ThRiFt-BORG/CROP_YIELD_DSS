@@ -1,10 +1,13 @@
-FROM nginx:stable-alpine
+FROM node:18-alpine
 
-# Remove default nginx content
-RUN rm -rf /usr/share/nginx/html/*
+WORKDIR /app
 
-# Copy built frontend
-COPY dist /usr/share/nginx/html
+COPY package*.json ./
 
-EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
+RUN npm install
+
+COPY . .
+
+EXPOSE 3000
+
+CMD ["npm", "start"]

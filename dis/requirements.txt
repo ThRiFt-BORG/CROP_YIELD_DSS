@@ -11,3 +11,4 @@ Pillow
 sqlalchemy
 pymysql
 geoalchemy2
+python-multipart

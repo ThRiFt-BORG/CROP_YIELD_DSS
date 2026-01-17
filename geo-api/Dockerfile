@@ -46,7 +46,6 @@ COPY shared ./shared
 
 ENV GUNICORN_WORKERS=3
 
-# This is the line that was missing!
 CMD gunicorn main:app \
   --workers ${GUNICORN_WORKERS} \
   --worker-class uvicorn.workers.UvicornWorker \

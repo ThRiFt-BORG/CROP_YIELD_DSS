@@ -10,3 +10,4 @@ pymysql
 geoalchemy2
 psycopg2-binary
 shapely
+python-multipart

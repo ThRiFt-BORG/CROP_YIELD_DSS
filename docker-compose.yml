@@ -1,3 +1,4 @@
+name: crop_yield_dss
 services:
   # ============================================================
   # 1. INFRASTRUCTURE: POSTGRES (POSTGIS) & MINIO (S3)

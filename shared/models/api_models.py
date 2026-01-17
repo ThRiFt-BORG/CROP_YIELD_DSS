@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 
 # --- General Models ---
@@ -34,10 +34,13 @@ class QueryPointResponse(BaseModel):
 # --- ml_api Models ---
 
 class PredictRequest(BaseModel):
-    features: dict = Field(..., description="Dictionary of features for prediction.")
+    # Updated to use Dict[str, Any] for better Pylance support
+    features: Dict[str, Any] = Field(..., description="Dictionary of features for prediction.")
 
 class PredictResponse(BaseModel):
     predicted_yield: float
+    # FIX: Added metadata field to support ISO-19157 traceability (RF vs DSSAT stats)
+    metadata: Optional[Dict[str, Any]] = Field(None, description="Optional metadata about the prediction ensemble.")
 
 # --- DIS Models ---
 

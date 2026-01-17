@@ -11,4 +11,4 @@ geoalchemy2
 psycopg2-binary
 shapely
 python-multipart
-DSSATTools
+DSSATTools==3.0.0

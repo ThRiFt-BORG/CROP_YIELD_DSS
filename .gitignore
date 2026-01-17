@@ -5,3 +5,4 @@ database/init_mysql.sql
 sandbox.txt
 .venv
 ml-api/Data
+frontend_backup

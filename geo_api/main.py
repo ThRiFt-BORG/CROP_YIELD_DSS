@@ -3,29 +3,27 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.routers.geo_router import router as geo_router
 import os
 
-# Initialize FastAPI app
 app = FastAPI(
     title="geo_api",
-    description="Spatial queries, raster access, and ML orchestration for the DSS.",
+    description="Spatial queries, raster access, and ML orchestration.",
     version="1.0.0"
 )
 
-# CORS Configuration (for local development and frontend communication)
-origins = [
-    "http://localhost:3000",  # Frontend development server
-    os.getenv("FRONTEND_URL", "*") # Production frontend URL
-]
-
+# Robust CORS for development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Include the main router
 app.include_router(geo_router, prefix="/v1")
+
+# Added for Frontend Badge status check
+@app.get("/v1/status")
+def get_status():
+    return {"status": "healthy", "service": "geo_api"}
 
 @app.get("/")
 def read_root():

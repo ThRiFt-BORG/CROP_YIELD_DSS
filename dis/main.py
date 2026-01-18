@@ -1,4 +1,7 @@
 from fastapi import FastAPI, File, UploadFile, Form, Depends, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from shared.database.models import RasterAsset # Added this import
+
 from sqlalchemy.orm import Session
 from typing import Dict, Any, cast # Added cast
 import pandas as pd
@@ -22,6 +25,14 @@ app = FastAPI(
     title="Data Ingestion Service (DIS)",
     description="ISO-robust pipeline for GEE Raster and Tabular data ingestion.",
     version="1.2.0"
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 @app.post("/v1/ingest", response_model=IngestResponse)
@@ -116,6 +127,12 @@ async def ingest_csv(
         db.rollback()
         logger.error(f"CSV Ingestion failed: {e}")
         raise HTTPException(status_code=500, detail=f"Database insertion failed: {e}")
+
+@app.get("/v1/rasters")
+def list_rasters(db: Session = Depends(get_db)):
+    """Used by dashboard to count assets"""
+    assets = db.query(RasterAsset).all()
+    return assets
 
 @app.get("/v1/status")
 def get_status():

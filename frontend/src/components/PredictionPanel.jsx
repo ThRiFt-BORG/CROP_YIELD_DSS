@@ -1,34 +1,34 @@
-import React, { useState, useEffect } from 'react';
-import { fetchRegions, generatePrediction } from '../services/api';
+import React, { useState } from 'react';
+import { generatePrediction } from '../services/api';
 
 export default function PredictionPanel({ showNotification }) {
-  const [regions, setRegions] = useState([]);
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
-
-  useEffect(() => { loadRegions(); }, []);
-  const loadRegions = async () => { const data = await fetchRegions(); setRegions(data); };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     
-    // DATA INTEGRITY: Collecting precise coordinates for the PostGIS Spatial Join
     const payload = {
       lat: parseFloat(e.target.lat.value),
       lon: parseFloat(e.target.lon.value),
       features: {
-        ndvi_mean: 0.58, // This should eventually come from the GEE raster
+        ndvi_mean: 0.58, 
         precip_mean: 5.2,
         temp_mean: 22.5,
-        fertilizer: parseFloat(e.target.fertilizer.value) || 100
+        fertilizer: parseFloat(e.target.fertilizer.value) || 120
       }
     };
 
-    const predResult = await generatePrediction(payload);
-    setResult(predResult);
-    setLoading(false);
-    if (predResult) showNotification('Ensemble Prediction Complete', 'success');
+    try {
+      const predResult = await generatePrediction(payload);
+      setResult(predResult);
+      showNotification('Hybrid Prediction Complete', 'success');
+    } catch (err) {
+      showNotification('Prediction Engine Error', 'error');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -62,13 +62,11 @@ export default function PredictionPanel({ showNotification }) {
         <div className="form-container result-card animated fadeIn">
           <h3 className="section-title" style={{ color: 'var(--secondary)' }}>📊 Model Insights</h3>
           <div className="dashboard-grid" style={{ marginBottom: 0 }}>
-            {/* Main Prediction Value */}
             <div className="stat-card" style={{ borderLeft: '4px solid var(--primary)' }}>
               <div className="stat-title">Final Yield Estimate</div>
               <div className="stat-value" style={{ fontSize: '48px' }}>{result.predicted_yield} <small style={{ fontSize: '14px', color: '#fff' }}>t/ha</small></div>
             </div>
 
-            {/* Hybrid Breakdown - ONLY possible with Recalibrated code */}
             {result.metadata && (
               <div className="stat-card">
                 <div className="stat-title">Model Confidence</div>

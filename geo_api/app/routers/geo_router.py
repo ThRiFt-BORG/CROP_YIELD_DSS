@@ -17,6 +17,25 @@ from app.utils.geospatial import extract_features_from_stack, call_ml_api
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+@router.get("/regions")
+def get_regions():
+    """
+    Returns the target region (Trans Nzoia) for the map and dropdowns.
+    Matches the coordinates used in GEE.
+    """
+    return [
+        {
+            "id": "trans_nzoia",
+            "name": "Trans Nzoia County",
+            "area": "2,499 km²",
+            "crop": "Maize",
+            "geometry": [
+                [1.2, 34.7], [1.2, 35.2], [0.8, 35.2], [0.8, 34.7], [1.2, 34.7]
+            ]
+        }
+    ]
+
+
 @router.post("/query/point", response_model=QueryPointResponse)
 def query_point(request: QueryPointRequest, db: Session = Depends(get_db)):
     """

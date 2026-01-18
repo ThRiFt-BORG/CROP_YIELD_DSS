@@ -1,28 +1,15 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { fetchRegions, uploadRaster, uploadCSV } from '../services/api';
+import React, { useState, useRef } from 'react';
+import { uploadRaster, uploadCSV } from '../services/api';
 
 export default function DataUpload({ showNotification }) {
-  const [regions, setRegions] = useState([]);
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef(null);
 
-  useEffect(() => {
-    loadRegions();
-  }, []);
-
-  const loadRegions = async () => {
-    try {
-      const data = await fetchRegions();
-      setRegions(data);
-    } catch (error) {
-      showNotification('Could not load regions', 'error');
-    }
-  };
-
   const handleFileChange = (e) => {
     const selected = e.target.files[0];
-    if (selected) {u
+    if (selected) {
+      setFile(selected);
       showNotification(`File selected: ${selected.name}`, 'info');
     }
   };
@@ -53,7 +40,7 @@ export default function DataUpload({ showNotification }) {
         target.reset();
         setFile(null);
       } else {
-        showNotification('Upload failed. Check logs.', 'error');
+        showNotification('Upload failed. Check service logs.', 'error');
       }
     } catch (error) {
       showNotification('Network error during upload', 'error');

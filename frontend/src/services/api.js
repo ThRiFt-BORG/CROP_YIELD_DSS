@@ -1,24 +1,30 @@
 export const API_BASE = {
-  GEO: 'http://localhost:8000',
-  ML: 'http://localhost:8001',
-  DIS: 'http://localhost:8002'
+  GEO: 'http://localhost:8000/v1', // Added /v1 to match your FastAPI routers
+  ML: 'http://localhost:8001/v1',
+  DIS: 'http://localhost:8002/v1'
 };
 
+/**
+ * Verifies if all Docker containers are reachable
+ */
 export async function checkApiStatus() {
   const status = { geo: false, ml: false, dis: false };
   
   try {
-    const geoRes = await fetch(`${API_BASE.GEO}/health`, { method: 'GET' });
+    // Geo uses default status
+    const geoRes = await fetch(`${API_BASE.GEO}/status`);
     status.geo = geoRes.ok;
   } catch (e) {}
   
   try {
-    const mlRes = await fetch(`${API_BASE.ML}/health`, { method: 'GET' });
+    // ML uses /health from main.py
+    const mlRes = await fetch(`http://localhost:8001/health`);
     status.ml = mlRes.ok;
   } catch (e) {}
   
   try {
-    const disRes = await fetch(`${API_BASE.DIS}/health`, { method: 'GET' });
+    // DIS uses /v1/status from main.py
+    const disRes = await fetch(`${API_BASE.DIS}/status`);
     status.dis = disRes.ok;
   } catch (e) {}
   
@@ -29,61 +35,74 @@ export async function fetchRegions() {
   try {
     const res = await fetch(`${API_BASE.GEO}/regions`);
     if (res.ok) return await res.json();
-  } catch (e) {}
+  } catch (e) {
+    console.error("GEO API unavailable, using local mock data.");
+  }
   return [
-    { id: 1, name: 'Field Alpha', geometry: [[40.7128, -74.0060], [40.7138, -74.0050], [40.7148, -74.0070], [40.7128, -74.0060]], area: '25 ha', crop: 'Wheat' },
-    { id: 2, name: 'Field Beta', geometry: [[40.7200, -74.0100], [40.7210, -74.0090], [40.7220, -74.0110], [40.7200, -74.0100]], area: '18 ha', crop: 'Corn' }
+    { id: 'trans_nzoia', name: 'Trans Nzoia County', area: '249,000 ha', crop: 'Maize' }
   ];
 }
 
-export async function fetchRasterAssets() {
-  try {
-    const res = await fetch(`${API_BASE.DIS}/rasters`);
-    if (res.ok) return await res.json();
-  } catch (e) {}
-  return [
-    { id: 1, type: 'NDVI', acquisition_date: '2026-01-10', format: 'COG', size: '45 MB', region: 'Field Alpha', status: 'Active' },
-    { id: 2, type: 'Precipitation', acquisition_date: '2026-01-12', format: 'GeoTIFF', size: '32 MB', region: 'Field Beta', status: 'Active' }
-  ];
-}
-
-export async function fetchPredictions() {
-  try {
-    const res = await fetch(`${API_BASE.ML}/predictions`);
-    if (res.ok) return await res.json();
-  } catch (e) {}
-  return [
-    { region_id: 'REG-001', crop_type: 'Wheat', predicted_yield: 4.5, confidence: 92, date: '2026-01-15', status: 'Active' },
-    { region_id: 'REG-002', crop_type: 'Corn', predicted_yield: 5.2, confidence: 89, date: '2026-01-14', status: 'Active' }
-  ];
-}
-
-export async function generatePrediction(data) {
-  try {
-    const res = await fetch(`${API_BASE.ML}/predict`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    });
-    if (res.ok) return await res.json();
-  } catch (e) {}
-  return {
-    predicted_yield: (Math.random() * 2 + 4).toFixed(2),
-    confidence: Math.floor(Math.random() * 10 + 85),
-    range_min: 3.5,
-    range_max: 5.5,
-    risk: 'Low'
-  };
-}
-
+/**
+ * UPLOAD RASTER (GEOTIFF/COG)
+ * Connects to DIS Service /v1/ingest
+ */
 export async function uploadRaster(formData) {
   try {
-    const res = await fetch(`${API_BASE.DIS}/upload`, {
+    // RECALIBRATION: DIS backend expects a "metadata" field containing a JSON string
+    // We transform the flat formData into the structure DIS expects
+    const metadata = {
+      asset_type: formData.get('data_type'),
+      datetime: new Date(formData.get('acquisition_date')).toISOString(),
+      crop_id: "Maize"
+    };
+
+    const disPayload = new FormData();
+    disPayload.append('file', formData.get('file'));
+    disPayload.append('metadata', JSON.stringify(metadata));
+
+    const res = await fetch(`${API_BASE.DIS}/ingest`, {
+      method: 'POST',
+      body: disPayload
+    });
+    return res.ok;
+  } catch (e) {
+    console.error("Raster Ingestion Error:", e);
+    return false;
+  }
+}
+
+/**
+ * UPLOAD CSV (GEE Zonal Stats or ML Samples)
+ * Connects to DIS Service /v1/ingest/csv/{type}
+ */
+export async function uploadCSV(file, type) {
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    // type is either 'wards' or 'samples'
+    const res = await fetch(`${API_BASE.DIS}/ingest/csv/${type}`, {
       method: 'POST',
       body: formData
     });
     return res.ok;
   } catch (e) {
+    console.error("CSV Ingestion Error:", e);
     return false;
   }
+}
+
+export async function generatePrediction(features) {
+  try {
+    const res = await fetch(`${API_BASE.ML}/predict`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ features })
+    });
+    if (res.ok) return await res.json();
+  } catch (e) {
+    console.error("ML Prediction Error:", e);
+  }
+  return null;
 }

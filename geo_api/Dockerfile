@@ -3,15 +3,14 @@
 # ===============================
 FROM crop-dss-base AS wheels
 
-# Set GDAL environment variables for the build
 ENV GDAL_CONFIG=/usr/bin/gdal-config \
     CPLUS_INCLUDE_PATH=/usr/include/gdal \
     C_INCLUDE_PATH=/usr/include/gdal
 
 RUN python -m pip install --upgrade pip setuptools wheel
 
-# PRE-INSTALL build dependencies 
-RUN pip install --timeout 120 --retries 10 \
+# Mega-timeout for slow connection
+RUN pip install --timeout 1000 --retries 20 \
     "setuptools>=67.8" \
     "wheel" \
     "cython~=3.0.0" \
@@ -19,11 +18,9 @@ RUN pip install --timeout 120 --retries 10 \
 
 COPY geo_api/requirements.txt .
 
-# Build the wheels
+# Building wheels (Allowing binaries for speed)
 RUN pip wheel --no-cache-dir --wheel-dir=/wheels \
-    --timeout 120 --retries 10 \
-    --no-build-isolation \
-    --no-binary rasterio \
+    --timeout 1000 --retries 20 \
     -r requirements.txt
 
 # ===============================
@@ -36,15 +33,10 @@ WORKDIR /app
 COPY --from=wheels /wheels /wheels
 COPY geo_api/requirements.txt .
 
-# Install from local wheels (No internet needed)
 RUN pip install --no-index --find-links=/wheels -r requirements.txt
 
 COPY geo_api .
 COPY shared ./shared
 
 ENV GUNICORN_WORKERS=3
-
-CMD gunicorn main:app \
-  --workers ${GUNICORN_WORKERS} \
-  --worker-class uvicorn.workers.UvicornWorker \
-  --bind 0.0.0.0:8000
+CMD ["gunicorn", "main:app", "--workers", "3", "--worker-class", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000"]

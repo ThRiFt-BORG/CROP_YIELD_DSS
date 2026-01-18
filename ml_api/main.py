@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from ml_api.prediction import router as prediction_router
+from prediction import router as prediction_router
 import logging
 
 logging.basicConfig(level=logging.INFO)

@@ -1,8 +1,5 @@
 name: crop_yield_dss
 services:
-  # ============================================================
-  # 1. INFRASTRUCTURE: POSTGRES (POSTGIS) & MINIO (S3)
-  # ============================================================
   postgres:
     image: postgis/postgis:16-3.4
     container_name: dss_postgres
@@ -36,9 +33,6 @@ services:
       - "9000:9000"
       - "9001:9001"
 
-  # ============================================================
-  # 2. BACKEND APIS: GEO, ML, AND DATA INGESTION (DIS)
-  # ============================================================
   geo_api:
     build:
       context: .
@@ -46,7 +40,6 @@ services:
       network: host
     image: crop-yield-dss-geo_api
     container_name: geo_api
-    restart: always
     depends_on:
       postgres:
         condition: service_healthy
@@ -54,12 +47,7 @@ services:
         condition: service_started
     environment:
       DATABASE_URL: postgresql+psycopg2://user:password@postgres/dss_db
-      ML_API_URL: http://ml_api:8000
       MINIO_ENDPOINT: http://minio:9000
-      MINIO_ACCESS_KEY: minio_user
-      MINIO_SECRET_KEY: minio_password
-    volumes:
-      - ./backend/DATA:/app/DATA
     ports:
       - "8000:8000"
 
@@ -70,12 +58,9 @@ services:
       network: host
     image: crop-yield-dss-ml_api
     container_name: ml_api
-    restart: always
     depends_on:
       postgres:
         condition: service_healthy
-    environment:
-      DATABASE_URL: postgresql+psycopg2://user:password@postgres/dss_db
     ports:
       - "8001:8000"
 
@@ -86,46 +71,25 @@ services:
       network: host
     image: crop-yield-dss-dis
     container_name: dis_service
-    restart: always
     depends_on:
       postgres:
         condition: service_healthy
-      minio:
-        condition: service_started
-    environment:
-      DATABASE_URL: postgresql+psycopg2://user:password@postgres/dss_db
-      MINIO_ENDPOINT: http://minio:9000
-      MINIO_ACCESS_KEY: minio_user
-      MINIO_SECRET_KEY: minio_password
-      S3_BUCKET_NAME: dss-cogs
     ports:
       - "8002:8000"
 
-  # ============================================================
-  # 3. FRONTEND: VITE / REACT DEVELOPMENT SERVER
-  # ============================================================
   frontend:
     build:
       context: ./frontend
       network: host
+    image: crop_yield_dss-frontend
     container_name: frontend_app
-    restart: always
     ports:
-      - "3000:3000"  
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-    command: npm start
+      - "3000:3000"
     environment:
       - CHOKIDAR_USEPOLLING=true
       - VITE_GEO_API_URL=http://localhost:8000/v1
     depends_on:
       - geo_api
-      - ml_api
-      - dis
 
-# ============================================================
-# VOLUMES
-# ============================================================
 volumes:
   minio_data:

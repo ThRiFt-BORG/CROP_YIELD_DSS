@@ -7,8 +7,8 @@ export default function Header({ apiStatus, onRefresh }) {
         <div className="logo">
           <div className="logo-icon">🌾</div>
           <div>
-            <h1>Trans Nzoia DSS</h1>
-            <p className="subtitle">AI-Powered Geospatial Agriculture Analytics</p>
+            <h1>Trans Nzoia County DSS</h1>
+            <p className="subtitle">AI-Powered Geospatial Agriculture Analytics Platform</p>
           </div>
         </div>
         <div className="header-right">

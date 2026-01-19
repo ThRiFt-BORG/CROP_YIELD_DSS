@@ -128,3 +128,4 @@ def query_point(request: QueryPointRequest, db: Session = Depends(get_db)):
         features=features_list, 
         time_series=time_series
     )
+

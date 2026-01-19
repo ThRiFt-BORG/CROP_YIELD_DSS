@@ -28,20 +28,30 @@ s3_client = boto3.client(
 )
 
 def convert_to_cog(input_file_path: str, output_file_path: str):
-    """Converts GEE GeoTIFF to Cloud Optimized GeoTIFF (COG)."""
+    """Memory-efficient COG conversion writing band-by-band."""
     try:
         with rasterio.open(input_file_path) as src:
             profile = src.profile
-            profile.update(driver='GTiff', tiled=True, blockxsize=256, blockysize=256, 
-                           compress='LZW', interleave='band')
+            profile.update(
+                driver='GTiff',
+                tiled=True,
+                blockxsize=256,
+                blockysize=256,
+                compress='LZW',
+                interleave='pixel' # Better for COG performance
+            )
 
             with rasterio.open(output_file_path, 'w', **profile) as dst:
-                dst.write(src.read())
+                # Loop through bands one by one to save RAM
+                for i in range(1, src.count + 1):
+                    dst.write(src.read(i), i)
+                
+                # Build overviews for fast map zooming
                 dst.build_overviews([2, 4, 8, 16], Resampling.average)
                 dst.update_tags(ns='rio_overview', resampling='average')
         return True
     except Exception as e:
-        print(f"COG conversion failed: {e}")
+        print(f"ISO-ERROR: COG conversion failed: {e}")
         return False
 
 async def process_and_ingest_raster(file: UploadFile, metadata: IngestMetadata, db: Session):

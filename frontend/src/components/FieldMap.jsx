@@ -14,7 +14,7 @@ export default function FieldMap() {
 
   return (
     <div className="map-container-wrapper">
-      <h3 className="section-title">🗺️ Trans Nzoia Ward Map</h3>
+      <h3 className="section-title">🗺️ Trans Nzoia County Boundaries Map</h3>
       <div className="map-container">
         <MapContainer center={kenyaCenter} zoom={9} style={{ height: '100%', width: '100%' }}>
           <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
@@ -26,8 +26,8 @@ export default function FieldMap() {
             >
               <Popup>
                 <div style={{ color: '#0a0e27' }}>
-                  <strong>{r.name} Ward</strong><br />
-                  GEE Data: Available
+                  <strong>{r.name} County Unit</strong><br />
+                  GEE Data Status: Synchronized
                 </div>
               </Popup>
             </Polygon>

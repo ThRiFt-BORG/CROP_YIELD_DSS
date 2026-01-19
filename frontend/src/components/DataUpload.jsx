@@ -63,6 +63,7 @@ export default function DataUpload({ showNotification }) {
           <input
             ref={fileInputRef}
             type="file"
+            name="file"
             accept=".tif,.tiff,.cog,.csv"
             className="hidden"
             style={{ display: 'none' }}

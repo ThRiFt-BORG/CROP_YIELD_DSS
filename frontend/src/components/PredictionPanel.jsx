@@ -23,7 +23,7 @@ export default function PredictionPanel({ showNotification }) {
     try {
       const predResult = await generatePrediction(payload);
       setResult(predResult);
-      showNotification('Hybrid Prediction Complete', 'success');
+      showNotification('County Prediction Complete', 'success');
     } catch (err) {
       showNotification('Prediction Engine Error', 'error');
     } finally {
@@ -34,7 +34,7 @@ export default function PredictionPanel({ showNotification }) {
   return (
     <>
       <div className="form-container">
-        <h3 className="section-title">🎯 Hybrid Simulation Engine</h3>
+        <h3 className="section-title">🎯 Hybrid County Simulation Engine</h3>
         <form onSubmit={handleSubmit}>
           <div className="dashboard-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
             <div className="form-group">
@@ -60,7 +60,7 @@ export default function PredictionPanel({ showNotification }) {
 
       {result && (
         <div className="form-container result-card animated fadeIn">
-          <h3 className="section-title" style={{ color: 'var(--secondary)' }}>📊 Model Insights</h3>
+          <h3 className="section-title" style={{ color: 'var(--secondary)' }}>📊 County-Level Insights</h3>
           <div className="dashboard-grid" style={{ marginBottom: 0 }}>
             <div className="stat-card" style={{ borderLeft: '4px solid var(--primary)' }}>
               <div className="stat-title">Final Yield Estimate</div>
@@ -69,7 +69,7 @@ export default function PredictionPanel({ showNotification }) {
 
             {result.metadata && (
               <div className="stat-card">
-                <div className="stat-title">Model Confidence</div>
+                <div className="stat-title">Prediction Breakdown</div>
                 <div style={{ marginTop: '10px' }}>
                   <p className="change-text">RF Statistical: <span className="change-value">{result.metadata.rf_val} t/ha</span></p>
                   <p className="change-text">DSSAT Mechanistic: <span className="change-value">{result.metadata.dssat_val} t/ha</span></p>

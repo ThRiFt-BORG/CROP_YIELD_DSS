@@ -32,8 +32,8 @@ export default function Dashboard({ showNotification }) {
   return (
     <div className="dashboard-content">
       <div className="dashboard-grid">
-        <StatCard title="Target Wards" value={stats.totalWards} icon="🇰🇪" change="Trans Nzoia" />
-        <StatCard title="Avg Prediction" value={stats.avgYield} unit=" t/ha" icon="📈" change="+0.4 from last" />
+        <StatCard title="Target Counties" value={stats.totalWards} icon="🇰🇪" change="Trans Nzoia" />
+        <StatCard title="Avg Prediction" value={stats.avgYield} unit=" t/ha" icon="📈" change="County Mean" />
         <StatCard title="GEE Assets" value={stats.totalRasters} icon="🛰️" change="Cloud Optimized" />
         <StatCard title="Model R²" value="0.79" icon="🎯" change="Very High" />
       </div>
@@ -41,12 +41,12 @@ export default function Dashboard({ showNotification }) {
       <YieldChart />
 
       <div className="data-table-container" style={{ marginTop: '30px' }}>
-        <h3 className="section-title">🔮 Recent System Predictions</h3>
+        <h3 className="section-title">🔮 Recent County Predictions</h3>
         <div className="data-table">
           <table>
             <thead>
               <tr>
-                <th>Region</th>
+                <th>County Unit</th>
                 <th>Predicted Yield</th>
                 <th>Status</th>
               </tr>
@@ -54,7 +54,7 @@ export default function Dashboard({ showNotification }) {
             <tbody>
               {predictions.length > 0 ? predictions.map((p, i) => (
                 <tr key={i}>
-                  <td>{p.region_name || 'Trans Nzoia'}</td>
+                  <td>{p.region_name || 'Trans Nzoia Unit'}</td>
                   <td>{p.predicted_yield} t/ha</td>
                   <td><span className="status-active">✓ Verified</span></td>
                 </tr>

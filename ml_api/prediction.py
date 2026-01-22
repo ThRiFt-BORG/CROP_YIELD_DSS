@@ -8,7 +8,6 @@ import os
 try:
     _tmp = pathlib.Path('/tmp/DSSAT048')
     _tmp.mkdir(parents=True, exist_ok=True)
-    (_tmp / 'DATA.CDE').touch(exist_ok=True)
     # Ensure the directory is writable by the engine
     os.system('chmod -R 777 /tmp/DSSAT048')
 except Exception:

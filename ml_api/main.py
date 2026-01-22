@@ -11,9 +11,6 @@ def init_dssat_workspace():
     try:
         tmp_dir = pathlib.Path('/tmp/DSSAT048')
         tmp_dir.mkdir(parents=True, exist_ok=True)
-        flag_file = tmp_dir / 'DATA.CDE'
-        if not flag_file.exists():
-            flag_file.touch()
         os.system('chmod -R 777 /tmp/DSSAT048')
         logger.info("DSSAT Runtime Workspace Verified.")
     except Exception as e:

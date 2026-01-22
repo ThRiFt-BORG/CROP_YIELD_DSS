@@ -40,7 +40,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # 2. SHIELD: Create the temp workspace during the build
 # This ensures it exists the millisecond Python imports the library
 RUN mkdir -p /tmp/DSSAT048 && \
-    touch /tmp/DSSAT048/DATA.CDE && \
     chmod -R 777 /tmp/DSSAT048
 
 WORKDIR /app

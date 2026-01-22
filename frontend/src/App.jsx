@@ -27,6 +27,13 @@ function App() {
 
   const showNotification = (message, type = 'info') => {
     setNotification({ message, type });
+    
+    // RECALIBRATION: If the user clicked "View" on a Raster Asset,
+    // switch the tab to the map automatically.
+    if (message.includes('Viewing asset')) {
+        setActiveTab('map');
+    }
+
     setTimeout(() => setNotification(null), 5000);
   };
 

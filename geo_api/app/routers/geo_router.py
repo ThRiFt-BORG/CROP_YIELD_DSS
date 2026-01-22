@@ -1,15 +1,22 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import func, cast, Column, Integer
 from typing import List, Optional, Any, Dict
 from datetime import datetime
 import logging
 
+# GIS Libraries for geometry conversion
+from geoalchemy2.shape import to_shape
+import shapely.geometry
+from geoalchemy2.elements import WKBElement
+from geoalchemy2 import Geometry
+
 # Internal shared imports
-from shared.database.base import get_db
+from shared.database.base import get_db, Base
+from shared.database import models # Added to access AuxiliaryData table
 from shared.models.api_models import QueryPointRequest, QueryPointResponse, Feature, TimeSeriesData
 
 # App-specific imports
-# Note: Using 'app' prefix as geo_api/ is the root in the container
 from app.utils.db_utils import get_auxiliary_data_at_point, get_raster_assets_by_bbox
 from app.utils.geospatial import extract_features_from_stack, call_ml_api
 
@@ -17,23 +24,58 @@ from app.utils.geospatial import extract_features_from_stack, call_ml_api
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+class Unit(Base):
+    __tablename__ = 'units'
+    id = Column(Integer, primary_key=True)
+    geom = Column(Geometry('POLYGON'))  # Define the geometry type explicitly
+
 @router.get("/regions")
-def get_regions():
+def get_regions(db: Session = Depends(get_db)):
     """
-    Returns the target region (Trans Nzoia) for the map and dropdowns.
-    Matches the coordinates used in GEE.
+    RECALIBRATED: Pulls REAL boundaries from PostGIS (AuxiliaryData table)
+    instead of the hardcoded mock box.
     """
-    return [
-        {
-            "id": "trans_nzoia",
-            "name": "Trans Nzoia County",
-            "area": "2,499 km²",
-            "crop": "Maize",
-            "geometry": [
-                [1.2, 34.7], [1.2, 35.2], [0.8, 35.2], [0.8, 34.7], [1.2, 34.7]
-            ]
-        }
-    ]
+    try:
+        # Query the county units/wards you uploaded via GeoJSON/CSV
+        units = db.query(models.AuxiliaryData).all()
+        
+        if not units:
+            logger.warning("No regions found in database. Map will be empty.")
+            return []
+
+        output = []
+        for u in units:
+            if isinstance(u.geom, WKBElement):  # Ensure the geometry is of the correct type
+                # Convert PostGIS binary to Shapely object
+                shape_obj = to_shape(u.geom)
+                # Convert to GeoJSON-style dictionary
+                mapping = shapely.geometry.mapping(shape_obj)
+                
+                # Handle nesting (Polygon vs MultiPolygon)
+                if mapping['type'] == 'Polygon':
+                    raw_coords = mapping['coordinates'][0]
+                elif mapping['type'] == 'MultiPolygon':
+                    # Get the exterior ring of the first polygon in the multi-collection
+                    raw_coords = mapping['coordinates'][0][0]
+                else:
+                    continue
+
+                # 4. Flip coordinates for Leaflet compatibility
+                flipped_coords = [[float(p[1]), float(p[0])] for p in raw_coords]
+
+                output.append({
+                    "id": u.ward_id or str(u.id),
+                    "name": u.ward_name,
+                    "area": f"{u.elevation_m}m Avg EL",
+                    "crop": "Maize",
+                    "geometry": flipped_coords 
+                })
+        
+        return output
+
+    except Exception as e:
+        logger.error(f"Failed to fetch regions: {e}")
+        return []
 
 
 @router.post("/query/point", response_model=QueryPointResponse)
@@ -45,7 +87,6 @@ def query_point(request: QueryPointRequest, db: Session = Depends(get_db)):
     point = request.point
     
     # FIX 1: Convert Pydantic model to dict for SQLAlchemy utilities
-    # Handles Pydantic v1 (dict) and v2 (model_dump)
     if hasattr(request.date_range, "model_dump"):
         date_range_dict = request.date_range.model_dump()
     else:
@@ -55,7 +96,6 @@ def query_point(request: QueryPointRequest, db: Session = Depends(get_db)):
     assets: List[Any] = get_raster_assets_by_bbox(db, point, date_range_dict)
     
     # FIX 3: Robustly find the PredictorStack asset
-    # Casting a.asset_type to str avoids SQLAlchemy 'ColumnElement' comparison errors
     stack_asset = next((a for a in assets if str(a.asset_type) == 'PredictorStack'), None)
     
     features_dict: Dict[str, float] = {}
@@ -69,7 +109,6 @@ def query_point(request: QueryPointRequest, db: Session = Depends(get_db)):
             # FIX 5: Handle the list returned by get_auxiliary_data_at_point
             aux_results = get_auxiliary_data_at_point(db, point)
             if aux_results and len(aux_results) > 0:
-                # Grab the first object in the list
                 aux_data = aux_results[0]
                 features_dict.update({
                     'soil_texture': float(getattr(aux_data, 'soil_texture', 0.0)), 
@@ -79,32 +118,24 @@ def query_point(request: QueryPointRequest, db: Session = Depends(get_db)):
             logger.error(f"Error extracting features from stack: {e}")
             raise HTTPException(status_code=500, detail="Spatial feature extraction failed")
     else:
-        # Fallback values for testing/missing data
         logger.warning(f"No PredictorStack found for point {point}. Using fallbacks.")
         features_dict = {
-            "ndvi_mean": 0.52, 
-            "precip_mean": 5.1, 
-            "et_mean": 3.8, 
-            "elevation_mean": 1850.0, 
-            "soil_texture": 2.0, 
-            "temp_mean": 21.5
+            "ndvi_mean": 0.52, "precip_mean": 5.1, "et_mean": 3.8, 
+            "elevation_mean": 1850.0, "soil_texture": 2.0, "temp_mean": 21.5
         }
 
-    # Transform dict to Feature list for API response, ensuring float conversion
-    features_list = [
-        Feature(name=str(k), value=float(v)) 
-        for k, v in features_dict.items()
-    ]
+    # Transform dict to Feature list
+    features_list = [Feature(name=str(k), value=float(v)) for k, v in features_dict.items()]
     
     # Call ML API for yield prediction
     try:
         predicted_yield = call_ml_api(features_dict)
     except Exception as e:
         logger.error(f"ML API call failed: {e}")
-        predicted_yield = 0.0 # Safety fallback
+        predicted_yield = 0.0
 
     # FIX 6: Robust Datetime Handling
-    ts_date = datetime(2024, 1, 1) # Default fallback
+    ts_date = datetime(2024, 1, 1) 
     if stack_asset and hasattr(stack_asset, "datetime"):
         raw_dt = stack_asset.datetime
         if isinstance(raw_dt, datetime):
@@ -113,15 +144,9 @@ def query_point(request: QueryPointRequest, db: Session = Depends(get_db)):
             try:
                 ts_date = datetime.fromisoformat(raw_dt)
             except ValueError:
-                logger.warning(f"Invalid date format in asset: {raw_dt}")
+                logger.warning(f"Invalid date format: {raw_dt}")
 
-    # Build TimeSeries data (currently uses NDVI as a proxy)
-    time_series = [
-        TimeSeriesData(
-            date=ts_date, 
-            value=float(features_dict.get("ndvi_mean", 0.0))
-        )
-    ]
+    time_series = [TimeSeriesData(date=ts_date, value=float(features_dict.get("ndvi_mean", 0.0)))]
     
     return QueryPointResponse(
         predicted_yield=float(predicted_yield), 
@@ -129,3 +154,4 @@ def query_point(request: QueryPointRequest, db: Session = Depends(get_db)):
         time_series=time_series
     )
 
+    logger.debug(f"Type of u.geom: {type(u.geom)}")

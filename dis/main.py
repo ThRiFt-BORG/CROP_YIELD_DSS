@@ -1,5 +1,6 @@
 from fastapi import FastAPI, File, UploadFile, Form, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from shared.database.models import RasterAsset 
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any, cast
 import pandas as pd
@@ -7,20 +8,26 @@ import io
 import json
 import logging
 import shapely.geometry
-from geoalchemy2.shape import to_shape  # FIX: Added missing import
+from shapely.geometry import shape  # Added for GeoJSON
+from geoalchemy2.shape import to_shape, from_shape  # Added from_shape
 
 # Shared imports
 from shared.models.api_models import IngestMetadata, IngestResponse
 from shared.database.base import get_db
-from shared.database.models import AuxiliaryData, YieldObservation, RasterAsset
+from shared.database.models import AuxiliaryData, YieldObservation
 
 # App-specific ingestion logic
 from app.ingestion.processors import process_and_ingest_raster
 
+# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="DIS", version="1.2.0")
+app = FastAPI(
+    title="Data Ingestion Service (DIS)",
+    description="ISO-robust pipeline for GEE Raster and Tabular data ingestion.",
+    version="1.2.0"
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -41,7 +48,7 @@ async def ingest_raster(
         ingest_metadata = IngestMetadata(**metadata_dict)
     except Exception as e:
         logger.error(f"Metadata parsing failed: {e}")
-        raise HTTPException(status_code=400, detail=f"Invalid metadata: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid metadata JSON format: {e}")
 
     try:
         asset_url, asset_id = await process_and_ingest_raster(
@@ -50,81 +57,62 @@ async def ingest_raster(
             db=db
         )
         return IngestResponse(
-            message="Raster successfully processed.",
+            message="Raster successfully processed and cataloged.",
             asset_url=asset_url,
             asset_id=cast(int, asset_id) 
         )
     except Exception as e:
-        logger.error(f"Ingestion failed: {e}")
+        logger.error(f"Ingestion process failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/v1/rasters")
-def list_rasters(db: Session = Depends(get_db)):
-    """
-    FIX: Robust serialization of PostGIS WKBElement.
-    This prevents the 'WKBElement is not iterable' crash.
-    """
-    assets = db.query(RasterAsset).all()
-    output = []
-    for a in assets:
-        # FIX: Access .value or use 'is not None' to avoid SQLAlchemy Column boolean errors
-        dt_val = None
-        if a.datetime is not None:
-            dt_val = a.datetime.isoformat()
-
-        asset_dict = {
-            "id": a.id,
-            "asset_url": a.asset_url,
-            "datetime": dt_val,
-            "asset_type": a.asset_type,
-            "bands": a.bands,
-            "status": "Active"
-        }
+# NEW: GeoJSON Ingestion Endpoint
+@app.post("/v1/ingest/geojson")
+async def ingest_geojson(
+    file: UploadFile = File(...), 
+    db: Session = Depends(get_db)
+):
+    """Ingest GeoJSON boundaries into AuxiliaryData table."""
+    try:
+        content = await file.read()
+        data = json.loads(content)
         
-        # FIX: Convert WKBElement to GeoJSON dictionary
-        if a.bbox is not None:
-            try:
-                # to_shape converts binary to a Shapely object
-                # mapping converts Shapely object to a JSON-ready dict
-                asset_dict["bbox"] = shapely.geometry.mapping(to_shape(cast(Any, a.bbox)))
-            except Exception as e:
-                logger.error(f"Geometry conversion failed for asset {a.id}: {e}")
-                asset_dict["bbox"] = None
-        else:
-            asset_dict["bbox"] = None
+        if data.get("type") != "FeatureCollection":
+            raise HTTPException(status_code=400, detail="Invalid GeoJSON format.")
+
+        features = data.get("features", [])
+        for f in features:
+            props = f.get("properties", {})
+            geom = f.get("geometry")
             
-        output.append(asset_dict)
-    return output
+            shapely_geom = shape(geom)
+            
+            db.add(AuxiliaryData(
+                ward_name=props.get('ADM2_EN') or props.get('name') or "Unknown",
+                ward_id=str(props.get('ADM2_PCODE') or props.get('id') or "0"),
+                ndvi_mean=0.0,
+                precip_mean=0.0,
+                geom=from_shape(shapely_geom, srid=4326)
+            ))
 
-@app.get("/v1/status")
-def get_status():
-    return {"status": "healthy", "service": "DIS"}
+        db.commit()
+        return {"status": "success", "message": f"Ingested {len(features)} boundary units."}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"GeoJSON Ingestion failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-# Add the ingest_csv route here as well if needed...
 @app.post("/v1/ingest/csv/{table_type}")
 async def ingest_csv(
     table_type: str, 
     file: UploadFile = File(...), 
     db: Session = Depends(get_db)
 ):
-    """
-    Ingest GEE CSV outputs:
-    1. 'wards' (Zonal Statistics for County Units)
-    2. 'samples' (ML Pixel samples with lat/lon)
-    """
-    logger.info(f"Received request to ingest CSV into table type: {table_type}")
+    content = await file.read()
+    df = pd.read_csv(io.BytesIO(content))
     
     try:
-        content = await file.read()
-        df = pd.read_csv(io.BytesIO(content))
-        
-        if df.empty:
-            raise HTTPException(status_code=400, detail="The uploaded CSV file is empty.")
-
         if table_type == "wards":
-            logger.info(f"Ingesting {len(df)} administrative records.")
             for _, row in df.iterrows():
-                # We use row.get() for robustness in case GEE columns are renamed
                 db.add(AuxiliaryData(
                     ward_name=row.get('ward_name') or row.get('county_name'),
                     ward_id=str(row.get('ward_id') or row.get('county_id')),
@@ -134,36 +122,48 @@ async def ingest_csv(
                     et_mean=float(row.get('et_mean', 0)),
                     elevation_m=float(row.get('elevation_mean', 0)),
                     soil_texture=float(row.get('soil_texture', 0)),
-                    # Note: Geometry ingestion for Wards requires WKT in the CSV
-                    # If not present, we create a placeholder based on the GEE ROI
                     geom=row.get('geometry') if 'geometry' in row else None
                 ))
-        
         elif table_type == "samples":
-            logger.info(f"Ingesting {len(df)} ML pixel samples.")
             for _, row in df.iterrows():
-                # Correctly handle GEE coordinate names
-                lon = float(row.get('longitude') or row.get('lon') or 0.0)
-                lat = float(row.get('latitude') or row.get('lat') or 0.0)
-                
+                lon, lat = float(row.get('longitude', 0)), float(row.get('latitude', 0))
                 db.add(YieldObservation(
-                    crop_id="Maize",
-                    year=2024,
-                    yield_value=float(row.get('yield_value', 0.0)),
-                    ndvi_mean=float(row.get('ndvi', 0.0)),
-                    precip_mean=float(row.get('precip', 0.0)),
-                    temp_mean=float(row.get('temp', 0.0)),
-                    # Create PostGIS geometry on the fly
-                    geom=f"SRID=4326;POINT({lon} {lat})"
+                    crop_id="Maize", year=2024, yield_value=float(row.get('yield_value', 0.0)),
+                    ndvi_mean=row.get('ndvi'), precip_mean=row.get('precip'),
+                    temp_mean=row.get('temp'), geom=f"SRID=4326;POINT({lon} {lat})"
                 ))
-        else:
-            raise HTTPException(status_code=400, detail="Invalid table_type. Use 'wards' or 'samples'.")
-
         db.commit()
-        logger.info(f"Successfully ingested {len(df)} rows into {table_type}.")
-        return {"status": "success", "message": f"Successfully ingested {len(df)} records into {table_type}."}
-
+        return {"status": "success", "message": f"Ingested {len(df)} rows"}
     except Exception as e:
         db.rollback()
-        logger.error(f"CSV Ingestion Pipeline failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database ingestion error: {str(e)}")
+        logger.error(f"CSV Ingestion failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/v1/rasters")
+def list_rasters(db: Session = Depends(get_db)):
+    """
+    RECALIBRATED: Matches frontend keys for auto-filling the Raster Assets table.
+    """
+    assets = db.query(RasterAsset).all()
+    output = []
+    for a in assets:
+        # Format the date nicely for the table
+        date_str = a.datetime.strftime("%Y-%m-%d") if a.datetime is not None else "N/A"
+        
+        asset_dict = {
+            "id": a.id,
+            "type": a.asset_type,           # Frontend expects 'type'
+            "acquisition_date": date_str,   # Frontend expects 'acquisition_date'
+            "format": "COG",                # Standard
+            "size": "Variable",             
+            "region": "Trans Nzoia",        # Local context
+            "status": "Active"
+        }
+        if a.bbox is not None:
+            asset_dict["bbox"] = shapely.geometry.mapping(to_shape(cast(Any, a.bbox)))
+        output.append(asset_dict)
+    return output
+
+@app.get("/v1/status")
+def get_status():
+    return {"status": "healthy", "service": "DIS"}

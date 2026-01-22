@@ -67,6 +67,22 @@ export async function generatePrediction(payload) {
   return null;
 }
 
+/** UPLOAD GEOJSON */ 
+export async function uploadGeoJSON(file) {
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`${API_BASE.DIS}/ingest/geojson`, {
+      method: 'POST',
+      body: formData
+    });
+    return res.ok;
+  } catch (e) {
+    console.error("GeoJSON upload network error", e);
+    return false;
+  }
+}
+
 /**
  * UPLOAD RASTER
  * Correctly packages flat form data into the JSON-metadata structure DIS expects

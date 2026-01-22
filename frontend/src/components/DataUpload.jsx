@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { uploadRaster, uploadCSV } from '../services/api';
+import { uploadRaster, uploadCSV, uploadGeoJSON } from '../services/api'; // Added uploadGeoJSON
 
 export default function DataUpload({ showNotification }) {
   const [file, setFile] = useState(null);
@@ -16,28 +16,30 @@ export default function DataUpload({ showNotification }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const target = e.currentTarget;
-
     if (!file) {
       showNotification('Please select a file', 'error');
       return;
     }
 
     setUploading(true);
+    const fileName = file.name.toLowerCase();
 
     try {
       let success = false;
-      if (file.name.toLowerCase().endsWith('.csv')) {
-        const tableType = file.name.toLowerCase().includes('ward') ? 'wards' : 'samples';
+      
+      if (fileName.endsWith('.geojson') || fileName.endsWith('.json')) {
+        // NEW: Routing to GeoJSON Ingestion
+        success = await uploadGeoJSON(file);
+      } else if (fileName.endsWith('.csv')) {
+        const tableType = fileName.includes('ward') ? 'wards' : 'samples';
         success = await uploadCSV(file, tableType);
       } else {
-        const formData = new FormData(target);
+        const formData = new FormData(e.currentTarget);
         success = await uploadRaster(formData);
       }
 
       if (success) {
         showNotification('Data successfully ingested!', 'success');
-        target.reset();
         setFile(null);
       } else {
         showNotification('Upload failed. Check service logs.', 'error');
@@ -59,12 +61,12 @@ export default function DataUpload({ showNotification }) {
           style={{ border: file ? '3px dashed var(--primary)' : '3px dashed rgba(0, 255, 136, 0.3)' }}
         >
           <div className="upload-icon">{file ? '✅' : '🛰️'}</div>
-          <div className="upload-text">{file ? file.name : 'Select GEE Predictor Stack (.tif) or CSV'}</div>
+          <div className="upload-text">{file ? file.name : 'Select GEE Stack, CSV, or GeoJSON'}</div>
           <input
             ref={fileInputRef}
             type="file"
             name="file"
-            accept=".tif,.tiff,.cog,.csv"
+            accept=".tif,.tiff,.cog,.csv,.geojson,.json" 
             className="hidden"
             style={{ display: 'none' }}
             onChange={handleFileChange}

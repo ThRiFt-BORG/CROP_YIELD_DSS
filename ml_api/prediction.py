@@ -60,7 +60,7 @@ def run_dssat_v3_sim(features: dict, soil_data=None) -> float:
         
         # 2. Define Field with mandatory soil ID
         field = Field(
-            id_field="KE01",
+            id_field="KENA2401",
             wsta="KENT",
             id_soil="IB00000001"
         )

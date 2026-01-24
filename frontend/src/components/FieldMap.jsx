@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, Polygon, Popup } from 'react-leaflet';
-import { fetchRegions, fetchWardStats } from '../services/api'; // Ensure fetchWardStats is exported in api.js
+import { fetchRegions, fetchWardStats } from '../services/api';
 import 'leaflet/dist/leaflet.css';
 
 export default function FieldMap() {
@@ -30,7 +30,7 @@ export default function FieldMap() {
   };
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: selectedUnitStats ? '1fr 380px' : '1fr', gap: '20px', transition: 'all 0.4s ease' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: selectedUnitStats || loading ? '1fr 380px' : '1fr', gap: '20px', transition: 'all 0.4s ease' }}>
       <div className="map-container-wrapper">
         <h3 className="section-title">🗺️ Trans Nzoia County Boundaries Map</h3>
         <div className="map-container">
@@ -40,9 +40,7 @@ export default function FieldMap() {
               <Polygon
                 key={r.id}
                 positions={r.geometry}
-                eventHandlers={{
-                  click: () => handlePolygonClick(r.id),
-                }}
+                eventHandlers={{ click: () => handlePolygonClick(r.id) }}
                 pathOptions={{ 
                   color: selectedUnitStats?.id === r.id ? '#fff' : '#00ff88', 
                   fillColor: '#00ff88', 
@@ -62,36 +60,59 @@ export default function FieldMap() {
         </div>
       </div>
 
-      {/* Dynamic Statistics Sidebar */}
-      {selectedUnitStats && (
-        <div className="form-container animated fadeIn" style={{ margin: 0, height: 'fit-content', border: '1px solid var(--primary)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-            <h3 className="section-title" style={{ margin: 0, fontSize: '18px' }}>📊 Unit Insights</h3>
-            <button 
-              onClick={() => setSelectedUnitStats(null)} 
-              style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: '20px' }}
-            >
-              ×
-            </button>
-          </div>
-          
-          <div style={{ marginBottom: '20px' }}>
-            <h2 style={{ color: 'var(--secondary)', fontSize: '24px', fontWeight: '800' }}>{selectedUnitStats.name}</h2>
-            <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>ID: {selectedUnitStats.id} • GEE Zonal Stats Synced</p>
-          </div>
-
-          <div className="biophysical-grid" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {Object.entries(selectedUnitStats.biophysical_signature).map(([key, value]) => (
-              <div key={key} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px', background: 'rgba(0,255,136,0.05)', borderRadius: '8px', border: '1px solid rgba(0,255,136,0.1)' }}>
-                <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.7)' }}>{key}</span>
-                <span style={{ fontWeight: '700', color: 'var(--primary)' }}>{value}</span>
+      {(loading || selectedUnitStats) && (
+        <div className="form-container animated fadeIn" style={{ margin: 0, height: 'fit-content', border: '1px solid var(--primary)', overflowY: 'auto', maxHeight: '85vh' }}>
+          {loading ? (
+            <div style={{ padding: '40px', textAlign: 'center' }}>
+              <div className="status-dot" style={{ margin: '0 auto 15px' }}></div>
+              <p style={{ color: 'var(--primary)', fontWeight: '600' }}>Fetching GEE Zonal Stats...</p>
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                <h3 className="section-title" style={{ margin: 0, fontSize: '18px' }}>📊 Unit Insights</h3>
+                <button onClick={() => setSelectedUnitStats(null)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: '20px' }}>×</button>
               </div>
-            ))}
-          </div>
+              
+              <div style={{ marginBottom: '20px' }}>
+                <h2 style={{ color: 'var(--secondary)', fontSize: '24px', fontWeight: '800' }}>{selectedUnitStats.name}</h2>
+                <div className={`badge ${selectedUnitStats.status === 'Warning' ? 'bg-red' : 'bg-green'}`} style={{fontSize: '10px', marginTop: '5px'}}>
+                   Status: {selectedUnitStats.status}
+                </div>
+              </div>
 
-          <div style={{ marginTop: '20px', padding: '15px', borderRadius: '10px', background: 'rgba(0,136,255,0.1)', fontSize: '12px', lineHeight: '1.5', color: 'rgba(255,255,255,0.8)' }}>
-             <strong>DSS Logic:</strong> These values represent the mean environmental conditions extracted from the multi-band GEE Predictor Stack for the 2024 season.
-          </div>
+              {/* Biophysical Metrics Loop */}
+              <div className="biophysical-grid" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {Object.entries(selectedUnitStats.biophysical_signature).map(([key, data]) => (
+                  <div key={key} style={{ padding: '12px', background: 'rgba(0,255,136,0.05)', borderRadius: '8px', border: '1px solid rgba(0,255,136,0.1)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                      <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.7)', fontWeight: 'bold' }}>{key}</span>
+                      {data.dev && (
+                        <span className={`badge ${parseFloat(data.dev) < 0 ? 'bg-red' : 'bg-green'}`} style={{fontSize: '10px'}}>
+                          {data.dev} anomaly
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontWeight: '700', color: 'var(--primary)', fontSize: '20px' }}>{data.val}</div>
+                    <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', marginTop: '4px' }}>{data.desc}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Explanatory Footer: Informed Decisions Support */}
+              <div style={{ marginTop: '25px', padding: '15px', borderRadius: '10px', background: 'rgba(0,136,255,0.15)', border: '1px solid rgba(0,136,255,0.3)', fontSize: '12px', lineHeight: '1.6', color: '#fff' }}>
+                 <p style={{ fontWeight: 'bold', color: 'var(--secondary)', marginBottom: '8px' }}>🛰️ GEE Predictor Stack Logic:</p>
+                 <ul style={{ paddingLeft: '15px', margin: 0 }}>
+                   <li><strong>NDVI:</strong> Multi-band proxy for vegetative health.</li>
+                   <li><strong>Precipitation:</strong> Cumulative moisture from CHIRPS daily.</li>
+                   <li><strong>Thermal:</strong> Integrated surface heat from ERA5-Land.</li>
+                 </ul>
+                 <p style={{ marginTop: '10px', fontSize: '11px', opacity: 0.8 }}>
+                   Anomalies are calculated relative to a 10-year GEE baseline to support prescriptive food security decisions.
+                 </p>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

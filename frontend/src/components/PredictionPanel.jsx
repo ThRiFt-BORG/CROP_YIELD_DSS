@@ -69,10 +69,13 @@ export default function PredictionPanel({ showNotification }) {
 
             {result.metadata && (
               <div className="stat-card">
-                <div className="stat-title">Prediction Breakdown</div>
+                <div className="stat-title">Diagnostic: {result.metadata.limiting_factor}</div>
                 <div style={{ marginTop: '10px' }}>
                   <p className="change-text">RF Statistical: <span className="change-value">{result.metadata.rf_val} t/ha</span></p>
                   <p className="change-text">DSSAT Mechanistic: <span className="change-value">{result.metadata.dssat_val} t/ha</span></p>
+                  <p style={{fontSize: '11px', color: 'var(--primary)', marginTop: '10px', fontWeight: 'bold'}}>
+                    DSS Advice: {result.metadata.limiting_factor.includes('Water') ? 'Prioritize Irrigation' : 'Normal Operations'}
+                  </p>
                 </div>
               </div>
             )}

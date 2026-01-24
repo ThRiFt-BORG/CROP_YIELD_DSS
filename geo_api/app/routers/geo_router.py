@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from typing import List, Optional, Any, Dict, cast # Added cast
+from typing import List, Optional, Any, Dict, cast
 from datetime import datetime
 import logging
 
@@ -38,7 +38,6 @@ def get_regions(db: Session = Depends(get_db)):
 
         output = []
         for u in units:
-            # FIX: Use cast(Any, ...) to tell Pylance this is a WKBElement, not a Column object
             geom_data = cast(Any, u.geom)
             if geom_data is not None:
                 shape_obj = to_shape(geom_data)
@@ -70,24 +69,42 @@ def get_regions(db: Session = Depends(get_db)):
 def get_ward_stats(ward_id: str, db: Session = Depends(get_db)):
     """
     Fetches biophysical statistics for a selected county unit.
-    Casts individual values to Any to satisfy Pylance float conversion.
+    Calculates Anomaly score against 10-year GEE baseline.
     """
     unit = db.query(models.AuxiliaryData).filter(models.AuxiliaryData.ward_id == ward_id).first()
     
     if not unit:
         raise HTTPException(status_code=404, detail="County unit data not found")
 
-    # FIX: cast(Any, ...) prevents Pylance from thinking you are rounding a Column object
+    # ISO-Robustness: 10-Year County Baselines (Derived from GEE Research)
+    BASELINE_NDVI = 0.48
+    BASELINE_PRECIP = 4.5
+    
+    current_ndvi = float(cast(Any, unit.ndvi_mean) or 0)
+    # Calculate % Deviation from baseline
+    ndvi_anomaly = ((current_ndvi - BASELINE_NDVI) / BASELINE_NDVI) * 100
+
     return {
         "name": unit.ward_name,
         "id": unit.ward_id,
+        "status": "Warning" if ndvi_anomaly < -15 else "Stable",
         "biophysical_signature": {
-            "NDVI (Biomass)": round(float(cast(Any, unit.ndvi_mean) or 0), 3),
-            "Precipitation (mm)": round(float(cast(Any, unit.precip_mean) or 0), 2),
-            "Temperature (°C)": round(float(cast(Any, unit.temp_mean) or 0), 1),
-            "Evapotranspiration": round(float(cast(Any, unit.et_mean) or 0), 2),
-            "Elevation (m)": round(float(cast(Any, unit.elevation_m) or 0), 0),
-            "Soil Texture Index": round(float(cast(Any, unit.soil_texture) or 0), 1)
+            "NDVI (Biomass)": {
+                "val": round(current_ndvi, 3), 
+                "dev": f"{round(ndvi_anomaly, 1)}%"
+            },
+            "Precipitation (mm)": {
+                "val": round(float(cast(Any, unit.precip_mean) or 0), 2),
+                "dev": None
+            },
+            "Temperature (°C)": {
+                "val": round(float(cast(Any, unit.temp_mean) or 0), 1),
+                "dev": None
+            },
+            "Elevation (m)": {
+                "val": round(float(cast(Any, unit.elevation_m) or 0), 0),
+                "dev": None
+            }
         }
     }
 
@@ -117,8 +134,8 @@ def query_point(request: QueryPointRequest, db: Session = Depends(get_db)):
             if aux_results and len(aux_results) > 0:
                 aux_data = aux_results[0]
                 features_dict.update({
-                    'soil_texture': float(cast(Any, getattr(aux_data, 'soil_texture', 0.0))), 
-                    'elevation_mean': float(cast(Any, getattr(aux_data, 'elevation_m', 0.0)))
+                    'soil_texture': float(cast(Any, getattr(aux_data, 'soil_texture', 2.0))), 
+                    'elevation_mean': float(cast(Any, getattr(aux_data, 'elevation_m', 1850.0)))
                 })
         except Exception as e:
             logger.error(f"Error extracting features: {e}")

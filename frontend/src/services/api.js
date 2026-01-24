@@ -125,3 +125,14 @@ export async function uploadCSV(file, type) {
     return false; 
   }
 }
+
+//fetch ward spatial statistics
+ export async function fetchWardStats(wardId) {
+  try {
+    const res = await fetch(`${API_BASE.GEO}/regions/${wardId}/stats`);
+    if (res.ok) return await res.json();
+  } catch (e) {
+    console.error("Error fetching ward spatial stats", e);
+  }
+  return null;
+}

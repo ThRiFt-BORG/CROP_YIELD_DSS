@@ -81,18 +81,29 @@ def run_dssat_v3_sim(features: dict, soil_data=None) -> dict:
 def predict_yield(request: PredictRequest, db: Session = Depends(get_db)):
     features = request.features
     
-    # 1. SPATIAL JOIN
+    # 1. TEMPORAL & SPATIAL JOIN
+    # Get the year from the request, default to 2024
+    year = int(features.get('year', 2024))
     lon, lat = features.get('lon', 35.0), features.get('lat', 1.0)
     point_geom = func.ST_SetSRID(func.ST_MakePoint(lon, lat), 4326)
     
+    # NEW logic: Find the soil data for this point and this SPECIFIC year
     soil_data = db.query(models.AuxiliaryData).filter(
-        func.ST_Contains(models.AuxiliaryData.geom, point_geom)
+        func.ST_Contains(models.AuxiliaryData.geom, point_geom),
+        models.AuxiliaryData.year == year # Matches the temporal dimension
     ).first()
+
+    # Fallback to the most recent data if that specific year isn't found
+    if not soil_data:
+        soil_data = db.query(models.AuxiliaryData).filter(
+            func.ST_Contains(models.AuxiliaryData.geom, point_geom)
+        ).order_by(models.AuxiliaryData.year.desc()).first()
 
     try:
         # 2. STATISTICAL Prediction (RF)
         rf_model = get_rf_model()
         rf_input = pd.DataFrame([{
+            'year': year, # Now passed as a feature
             'ndvi_mean': features.get('ndvi_mean', 0.5),
             'precip_mean': features.get('precip_mean', 5.0),
             'et_mean': features.get('et_mean', 3.0),

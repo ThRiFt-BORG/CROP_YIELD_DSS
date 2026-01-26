@@ -464,3 +464,23 @@ tr:hover td {
 .fadeIn {
   animation-name: fadeIn;
 }
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.terminal-body {
+  line-height: 1.5;
+}
+
+.blinking-cursor {
+  display: inline-block;
+  width: 10px;
+  background-color: var(--primary);
+  animation: blink 1s step-end infinite;
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}

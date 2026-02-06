@@ -18,13 +18,44 @@ export async function checkApiStatus() {
   return status;
 }
 
-export async function fetchRegions() {
+/**
+ * Discovery: Returns all counties currently in PostGIS
+ * Used by FieldMap.jsx dropdown
+ */
+export async function fetchAvailableCounties() {
   try {
-    const res = await fetch(`${API_BASE.GEO}/regions`);
+    const res = await fetch(`${API_BASE.GEO}/counties`);
+    if (res.ok) return await res.json();
+  } catch (e) { console.error("Counties discovery error", e); }
+  return [];
+}
+
+/**
+ * Discovery: Returns all production years available in database
+ * Used by FieldMap.jsx temporal filter
+ */
+export async function fetchAvailableYears() {
+  try {
+    const res = await fetch(`${API_BASE.GEO}/years`);
+    if (res.ok) return await res.json();
+  } catch (e) { console.error("Years discovery error", e); }
+  return [];
+}
+
+/**
+ * Pulls boundaries from PostGIS
+ * Updated to support County and Year filtering
+ */
+export async function fetchRegions(county = null, year = 2024) {
+  try {
+    let url = `${API_BASE.GEO}/regions?year=${year}`;
+    if (county) url += `&county=${encodeURIComponent(county)}`;
+    
+    const res = await fetch(url);
     if (res.ok) return await res.json();
   } catch (e) { console.error("Geo API error", e); }
-  // Robust fallback for Trans Nzoia ROI
-  return [{ id: 'trans_nzoia', name: 'Trans Nzoia County', area: '2,499 km²', crop: 'Maize' }];
+  // Robust fallback for Trans Nzoia ROI if database is empty
+  return [];
 }
 
 export async function fetchRasterAssets() {
@@ -126,10 +157,13 @@ export async function uploadCSV(file, type) {
   }
 }
 
-//fetch ward spatial statistics
- export async function fetchWardStats(wardId) {
+/**
+ * Fetch ward spatial statistics
+ * Updated to support specific year selection
+ */
+ export async function fetchWardStats(wardId, year = 2024) {
   try {
-    const res = await fetch(`${API_BASE.GEO}/regions/${wardId}/stats`);
+    const res = await fetch(`${API_BASE.GEO}/regions/${wardId}/stats?year=${year}`);
     if (res.ok) return await res.json();
   } catch (e) {
     console.error("Error fetching ward spatial stats", e);

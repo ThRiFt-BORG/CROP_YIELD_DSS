@@ -13,16 +13,16 @@ class Region(Base):
 
 class YieldObservation(Base):
     """
-    Stores ML Samples CSV + Ground Truth Yield.
-    Updated to store features directly for fast re-training.
+    Stores ground truth or persisted predictions.
+    Naturally supports multi-year via the 'year' column.
     """
     __tablename__ = "yieldobservation"
     id = Column(Integer, primary_key=True, index=True)
     crop_id = Column(String(50), nullable=False, default="Maize")
-    year = Column(Integer, nullable=False)
+    year = Column(Integer, nullable=False, index=True) # Indexed for speed
     yield_value = Column(Float, nullable=False)
     
-    # Feature columns from GEE ML Samples CSV
+    # Feature columns from GEE ML Samples
     ndvi_mean = Column(Float)
     precip_mean = Column(Float)
     et_mean = Column(Float)
@@ -34,30 +34,30 @@ class YieldObservation(Base):
 
 class RasterAsset(Base):
     """
-    Tracks the GEE Stacked TIFF in MinIO.
+    Tracks GEE Tiff Stacks. 
+    Naturally supports multi-year via the 'datetime' column.
     """
     __tablename__ = "rasterasset"
     id = Column(Integer, primary_key=True, index=True)
-    asset_url = Column(String(512), nullable=False) # minio://dss-cogs/stack_2024.tif
-    datetime = Column(DateTime, nullable=False)
-    asset_type = Column(String(50), nullable=False) # e.g., 'PredictorStack'
-    
-    # Store band names as JSON for ISO traceability
-    bands = Column(JSON, nullable=True) # ['ndvi', 'precip', 'et', 'elevation', 'soil', 'temp']
-    
+    asset_url = Column(String(512), nullable=False)
+    datetime = Column(DateTime, nullable=False, index=True)
+    asset_type = Column(String(50), nullable=False)
+    bands = Column(JSON, nullable=True)
     bbox = Column(Geometry(geometry_type='POLYGON', srid=SRID), nullable=False)
 
 class AuxiliaryData(Base):
     """
-    Stores the GEE Zonal Statistics CSV.
-    Links Ward Polygons to their mean environmental values.
+    Stores GEE Zonal Statistics.
+    RECALIBRATED: Now includes 'year' to support multi-temporal analysis.
     """
     __tablename__ = "auxiliarydata"
     id = Column(Integer, primary_key=True, index=True)
     ward_name = Column(String(100), nullable=False)
-    ward_id = Column(String(50)) # ADM2_PCODE from GEE
+    ward_id = Column(String(50))
+    county_name = Column(String(100), index=True)
+    year = Column(Integer, index=True, nullable=False) # NEW: Temporal Dimension
     
-    # Mean values calculated via GEE reduceRegions
+    # Biophysical means for that specific year
     ndvi_mean = Column(Float)
     precip_mean = Column(Float)
     et_mean = Column(Float)

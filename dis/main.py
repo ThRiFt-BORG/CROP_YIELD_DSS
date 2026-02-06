@@ -8,12 +8,13 @@ import io
 import json
 import logging
 import shapely.geometry
-from shapely.geometry import shape  # Added for GeoJSON
-from geoalchemy2.shape import to_shape, from_shape  # Added from_shape
+from shapely.geometry import shape
+from geoalchemy2.shape import to_shape, from_shape
 
 # Shared imports
 from shared.models.api_models import IngestMetadata, IngestResponse
 from shared.database.base import get_db
+from shared.database import models
 from shared.database.models import AuxiliaryData, YieldObservation
 
 # App-specific ingestion logic
@@ -25,8 +26,8 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Data Ingestion Service (DIS)",
-    description="ISO-robust pipeline for GEE Raster and Tabular data ingestion.",
-    version="1.2.0"
+    description="Multi-temporal Ingestion Pipeline for Kenyan Counties.",
+    version="1.3.0"
 )
 
 app.add_middleware(
@@ -57,7 +58,7 @@ async def ingest_raster(
             db=db
         )
         return IngestResponse(
-            message="Raster successfully processed and cataloged.",
+            message="Raster successfully cataloged.",
             asset_url=asset_url,
             asset_id=cast(int, asset_id) 
         )
@@ -65,37 +66,43 @@ async def ingest_raster(
         logger.error(f"Ingestion process failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# NEW: GeoJSON Ingestion Endpoint
 @app.post("/v1/ingest/geojson")
 async def ingest_geojson(
     file: UploadFile = File(...), 
     db: Session = Depends(get_db)
 ):
-    """Ingest GeoJSON boundaries into AuxiliaryData table."""
+    """
+    Ingest boundaries. 
+    Standardizes ADM columns for the 47 Kenya Counties.
+    """
     try:
         content = await file.read()
         data = json.loads(content)
-        
-        if data.get("type") != "FeatureCollection":
-            raise HTTPException(status_code=400, detail="Invalid GeoJSON format.")
-
         features = data.get("features", [])
         for f in features:
             props = f.get("properties", {})
-            geom = f.get("geometry")
             
-            shapely_geom = shape(geom)
-            
-            db.add(AuxiliaryData(
-                ward_name=props.get('ADM2_EN') or props.get('name') or "Unknown",
-                ward_id=str(props.get('ADM2_PCODE') or props.get('id') or "0"),
-                ndvi_mean=0.0,
-                precip_mean=0.0,
-                geom=from_shape(shapely_geom, srid=4326)
-            ))
+            # Map standard Kenya GAUL/Shapefile attributes
+            ward_id = str(props.get('ADM2_PCODE') or props.get('ward_id') or props.get('id'))
+            county_name = props.get('ADM1_EN') or props.get('county_name') or "Unknown"
+            ward_name = props.get('ADM2_EN') or props.get('ward_name') or props.get('name')
+            year = int(props.get('year', 2024))
 
+            db.add(AuxiliaryData(
+                ward_name=ward_name,
+                ward_id=ward_id,
+                county_name=county_name,
+                year=year,
+                geom=from_shape(shape(f.get("geometry")), srid=4326),
+                ndvi_mean=0.0, 
+                precip_mean=0.0,
+                temp_mean=0.0,
+                et_mean=0.0,
+                elevation_m=0.0,
+                soil_texture=0.0
+            ))
         db.commit()
-        return {"status": "success", "message": f"Ingested {len(features)} boundary units."}
+        return {"status": "success", "message": f"Successfully ingested {len(features)} boundaries."}
     except Exception as e:
         db.rollback()
         logger.error(f"GeoJSON Ingestion failed: {e}")
@@ -107,33 +114,68 @@ async def ingest_csv(
     file: UploadFile = File(...), 
     db: Session = Depends(get_db)
 ):
+    """
+    Ingest GEE CSV outputs.
+    RECALIBRATED: Performs an UPSERT (Update or Insert) to merge stats with existing GeoJSON shapes.
+    """
     content = await file.read()
     df = pd.read_csv(io.BytesIO(content))
-    
     try:
         if table_type == "wards":
+            logger.info(f"Merging {len(df)} CSV records with existing spatial units.")
             for _, row in df.iterrows():
-                db.add(AuxiliaryData(
-                    ward_name=row.get('ward_name') or row.get('county_name'),
-                    ward_id=str(row.get('ward_id') or row.get('county_id')),
-                    ndvi_mean=float(row.get('ndvi_mean', 0)),
-                    precip_mean=float(row.get('precip_mean', 0)),
-                    temp_mean=float(row.get('temp_mean', 0)),
-                    et_mean=float(row.get('et_mean', 0)),
-                    elevation_m=float(row.get('elevation_mean', 0)),
-                    soil_texture=float(row.get('soil_texture', 0)),
-                    geom=row.get('geometry') if 'geometry' in row else None
-                ))
+                w_id = str(row.get('ward_id') or row.get('ADM2_PCODE'))
+                w_year = int(row.get('year', 2024))
+                
+                existing_unit = db.query(AuxiliaryData).filter(
+                    AuxiliaryData.ward_id == w_id,
+                    AuxiliaryData.year == w_year
+                ).first()
+
+                if existing_unit:
+                    # FIX: cast(Any, ...) solves the "float not assignable to Column" Pylance issue
+                    u = cast(Any, existing_unit)
+                    u.ndvi_mean = float(row.get('ndvi_mean') or row.get('ndvi') or 0.0)
+                    u.precip_mean = float(row.get('precip_mean') or row.get('precip') or 0.0)
+                    u.temp_mean = float(row.get('temp_mean') or row.get('temp') or 0.0)
+                    u.et_mean = float(row.get('et_mean') or row.get('et') or 0.0)
+                    u.elevation_m = float(row.get('elevation_mean') or row.get('elevation') or 0.0)
+                    u.soil_texture = float(row.get('soil_texture') or 0.0)
+                    
+                    c_name = row.get('county_name')
+                    if c_name:
+                        u.county_name = str(c_name)
+                else:
+                    db.add(AuxiliaryData(
+                        ward_name=str(row.get('ward_name') or row.get('ADM2_EN') or "Unknown"),
+                        ward_id=w_id,
+                        county_name=str(row.get('county_name') or "Unknown"),
+                        year=w_year,
+                        ndvi_mean=float(row.get('ndvi_mean', 0.0)),
+                        precip_mean=float(row.get('precip_mean', 0.0)),
+                        temp_mean=float(row.get('temp_mean', 0.0)),
+                        et_mean=float(row.get('et_mean', 0.0)),
+                        elevation_m=float(row.get('elevation_mean', 0.0)),
+                        soil_texture=float(row.get('soil_texture', 0.0)),
+                        geom=None 
+                    ))
+        
         elif table_type == "samples":
             for _, row in df.iterrows():
-                lon, lat = float(row.get('longitude', 0)), float(row.get('latitude', 0))
+                lon = float(row.get('longitude') or row.get('lon') or 0.0)
+                lat = float(row.get('latitude') or row.get('lat') or 0.0)
                 db.add(YieldObservation(
-                    crop_id="Maize", year=2024, yield_value=float(row.get('yield_value', 0.0)),
-                    ndvi_mean=row.get('ndvi'), precip_mean=row.get('precip'),
-                    temp_mean=row.get('temp'), geom=f"SRID=4326;POINT({lon} {lat})"
+                    crop_id="Maize", 
+                    year=int(row.get('year', 2024)),
+                    yield_value=float(row.get('yield_value', 0.0)),
+                    ndvi_mean=row.get('ndvi'), 
+                    precip_mean=row.get('precip'),
+                    temp_mean=row.get('temp'), 
+                    geom=f"SRID=4326;POINT({lon} {lat})"
                 ))
+        
         db.commit()
-        return {"status": "success", "message": f"Ingested {len(df)} rows"}
+        return {"status": "success", "message": f"Ingested/Merged {len(df)} records into {table_type}"}
     except Exception as e:
         db.rollback()
         logger.error(f"CSV Ingestion failed: {e}")
@@ -141,22 +183,17 @@ async def ingest_csv(
 
 @app.get("/v1/rasters")
 def list_rasters(db: Session = Depends(get_db)):
-    """
-    RECALIBRATED: Matches frontend keys for auto-filling the Raster Assets table.
-    """
     assets = db.query(RasterAsset).all()
     output = []
     for a in assets:
-        # Format the date nicely for the table
-        date_str = a.datetime.strftime("%Y-%m-%d") if a.datetime is not None else "N/A"
-        
+        dt_val = a.datetime.isoformat() if a.datetime is not None else None
         asset_dict = {
-            "id": a.id,
-            "type": a.asset_type,           # Frontend expects 'type'
-            "acquisition_date": date_str,   # Frontend expects 'acquisition_date'
-            "format": "COG",                # Standard
-            "size": "Variable",             
-            "region": "Trans Nzoia",        # Local context
+            "id": a.id, 
+            "type": a.asset_type, 
+            "acquisition_date": dt_val, 
+            "format": "COG", 
+            "size": "Variable", 
+            "region": "Kenya DSS", 
             "status": "Active"
         }
         if a.bbox is not None:

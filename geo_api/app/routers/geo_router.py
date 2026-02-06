@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List, Optional, Any, Dict, cast
@@ -23,17 +23,51 @@ from app.utils.geospatial import extract_features_from_stack, call_ml_api
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-@router.get("/regions")
-def get_regions(db: Session = Depends(get_db)):
+@router.get("/counties")
+def get_available_counties(db: Session = Depends(get_db)):
     """
-    Pulls REAL boundaries from PostGIS (AuxiliaryData table).
+    DYNAMIC DISCOVERY: Returns all counties currently in PostGIS 
+    and calculates their geographic center for map FlyTo logic.
+    """
+    try:
+        # We use ST_Extent to find the bounding box of the whole county 
+        # and ST_Centroid to find the middle point.
+        results = db.query(
+            models.AuxiliaryData.county_name,
+            func.ST_Y(func.ST_Centroid(func.ST_Extent(models.AuxiliaryData.geom))),
+            func.ST_X(func.ST_Centroid(func.ST_Extent(models.AuxiliaryData.geom)))
+        ).group_by(models.AuxiliaryData.county_name).all()
+        
+        return [{"name": r[0], "center": [r[1], r[2]]} for r in results if r[0]]
+    except Exception as e:
+        logger.error(f"County discovery failed: {e}")
+        return []
+
+@router.get("/years")
+def get_available_years(db: Session = Depends(get_db)):
+    """Discovery: Returns all production years available in the database."""
+    try:
+        years = db.query(models.AuxiliaryData.year).distinct().order_by(models.AuxiliaryData.year.desc()).all()
+        return [y[0] for y in years if y[0]]
+    except Exception as e:
+        logger.error(f"Year discovery failed: {e}")
+        return []
+
+@router.get("/regions")
+def get_regions(county: Optional[str] = None, year: int = Query(2024), db: Session = Depends(get_db)):
+    """
+    Pulls boundaries filtered by county AND year.
     Casts geometry to Any to satisfy Pylance type checking.
     """
     try:
-        units = db.query(models.AuxiliaryData).all()
+        query = db.query(models.AuxiliaryData).filter(models.AuxiliaryData.year == year)
+        if county:
+            query = query.filter(models.AuxiliaryData.county_name == county)
+        
+        units = query.all()
         
         if not units:
-            logger.warning("No regions found in database.")
+            logger.warning(f"No regions found for {county} in {year}")
             return []
 
         output = []
@@ -55,55 +89,61 @@ def get_regions(db: Session = Depends(get_db)):
                 output.append({
                     "id": u.ward_id or str(u.id),
                     "name": u.ward_name,
+                    "county": u.county_name,
+                    "year": u.year,
                     "area": f"{getattr(u, 'elevation_m', 'N/A')}m Avg EL",
                     "geometry": flipped_coords 
                 })
         
         return output
-
     except Exception as e:
         logger.error(f"Failed to fetch regions: {e}")
         return []
 
 @router.get("/regions/{ward_id}/stats")
-def get_ward_stats(ward_id: str, db: Session = Depends(get_db)):
+def get_ward_stats(ward_id: str, year: int = Query(2024), db: Session = Depends(get_db)):
     """
-    Fetches biophysical statistics for a selected county unit.
-    Calculates Anomaly score against 10-year GEE baseline.
+    Fetches stats for a specific ward in a specific year.
+    Calculates anomaly relative to the county average for that year.
     """
-    unit = db.query(models.AuxiliaryData).filter(models.AuxiliaryData.ward_id == ward_id).first()
+    unit = db.query(models.AuxiliaryData).filter(
+        models.AuxiliaryData.ward_id == ward_id,
+        models.AuxiliaryData.year == year
+    ).first()
     
     if not unit:
-        raise HTTPException(status_code=404, detail="County unit data not found")
+        raise HTTPException(status_code=404, detail="County unit data not found for this year")
 
-    # ISO-Robustness: 10-Year County Baselines (Derived from GEE Research)
-    BASELINE_NDVI = 0.48
-    BASELINE_PRECIP = 4.5
+    # DYNAMIC BASELINE: Average of ALL wards in this County for the selected year
+    avg_county_ndvi = db.query(func.avg(models.AuxiliaryData.ndvi_mean)).filter(
+        models.AuxiliaryData.county_name == unit.county_name,
+        models.AuxiliaryData.year == year
+    ).scalar() or 0.48
     
     current_ndvi = float(cast(Any, unit.ndvi_mean) or 0)
-    # Calculate % Deviation from baseline
-    ndvi_anomaly = ((current_ndvi - BASELINE_NDVI) / BASELINE_NDVI) * 100
+    ndvi_anomaly = ((current_ndvi - avg_county_ndvi) / avg_county_ndvi) * 100
 
     return {
         "name": unit.ward_name,
         "id": unit.ward_id,
+        "county": unit.county_name,
+        "year": unit.year,
         "status": "Warning" if ndvi_anomaly < -15 else "Stable",
         "biophysical_signature": {
             "NDVI (Biomass)": {
                 "val": round(current_ndvi, 3), 
-                "dev": f"{round(ndvi_anomaly, 1)}%"
+                "dev": f"{round(ndvi_anomaly, 1)}%",
+                "desc": "Vegetation vigor vs County mean."
             },
             "Precipitation (mm)": {
                 "val": round(float(cast(Any, unit.precip_mean) or 0), 2),
-                "dev": None
+                "dev": None,
+                "desc": "Rainfall flux from CHIRPS."
             },
             "Temperature (°C)": {
                 "val": round(float(cast(Any, unit.temp_mean) or 0), 1),
-                "dev": None
-            },
-            "Elevation (m)": {
-                "val": round(float(cast(Any, unit.elevation_m) or 0), 0),
-                "dev": None
+                "dev": None,
+                "desc": "Surface temperature from ERA5."
             }
         }
     }
@@ -155,16 +195,6 @@ def query_point(request: QueryPointRequest, db: Session = Depends(get_db)):
         predicted_yield = 0.0
 
     ts_date = datetime(2024, 1, 1) 
-    if stack_asset and hasattr(stack_asset, "datetime"):
-        raw_dt = stack_asset.datetime
-        if isinstance(raw_dt, datetime):
-            ts_date = raw_dt
-        elif isinstance(raw_dt, str):
-            try:
-                ts_date = datetime.fromisoformat(raw_dt)
-            except ValueError:
-                pass
-
     time_series = [TimeSeriesData(date=ts_date, value=float(features_dict.get("ndvi_mean", 0.0)))]
     
     return QueryPointResponse(

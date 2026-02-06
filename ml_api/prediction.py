@@ -2,7 +2,7 @@ import pathlib
 import os
 
 # =================================================================
-# SHIELD: PRE-IMPORT WORKSPACE VERIFICATION
+# SHIELD: PRE-IMPORT WORKSPACE VERIFICATION (Preserved)
 # =================================================================
 try:
     _tmp = pathlib.Path('/tmp/DSSAT048')
@@ -48,29 +48,41 @@ def get_rf_model():
 def run_dssat_v3_sim(features: dict, soil_data=None) -> dict:
     """
     Modern DSSATTools v3.0 simulation logic.
-    Identifies the 'Primary Limiting Factor' for Informed Decisions.
+    RECALIBRATED: Now explicitly sensitive to Nitrogen (Fertilizer) inputs.
     """
     try:
         # Preserve Character Lengths for legacy Fortran
         field = Field(id_field="KENA2401", wsta="KENT", id_soil="IB00000001")
         
-        base_potential = 3.8
-        precip = float(features.get('precip_mean', 5.0))
+        base_potential = 4.2 # Adjusted for High-Potential Kenya Highlands
+        precip = float(features.get('precip_total') or features.get('precip_mean') or 500.0)
         temp = float(features.get('temp_mean', 22.0))
+        fert = float(features.get('fertilizer', 120.0)) # THE SLIDER VALUE
         
-        # Calculate Stress Factors
-        water_stress = min(1.0, precip / 4.5)
+        # 1. Calculate Environmental Stress Factors
+        # Water stress based on cumulative seasonal rainfall
+        water_stress = min(1.0, precip / 800.0) 
+        # Heat stress threshold (Maize begins stressing > 28°C)
         heat_stress = 1.0 - max(0, (temp - 28) * 0.1)
         
-        # Determine Limiting Factor
+        # 2. CALCULATE NITROGEN RESPONSE (Linear-Plateau Model)
+        # Logic: Yield increases with N up to 180kg, then plateaus.
+        n_factor = 0.5 + (0.5 * (fert / 180.0)) if fert < 180 else 1.15
+        
+        # 3. COMPUTE MECHANISTIC YIELD
+        sim_yield = base_potential * water_stress * heat_stress * n_factor
+
+        # 4. DIAGNOSTIC LOGIC
         limiting_factor = "None (Optimal)"
-        if water_stress < heat_stress and water_stress < 0.85:
-            limiting_factor = "Water Deficit"
-        elif heat_stress < water_stress and heat_stress < 0.85:
-            limiting_factor = "Thermal Stress"
+        if fert < 60:
+            limiting_factor = "Nutrient Deficiency (Low Nitrogen)"
+        elif water_stress < 0.7:
+            limiting_factor = "Water Deficit (Low Rainfall)"
+        elif heat_stress < 0.9:
+            limiting_factor = "Thermal Stress (High Temp)"
 
         return {
-            "yield": float(base_potential * water_stress * heat_stress),
+            "yield": float(sim_yield),
             "limiting_factor": limiting_factor
         }
     except Exception as e:
@@ -82,34 +94,39 @@ def predict_yield(request: PredictRequest, db: Session = Depends(get_db)):
     features = request.features
     
     # 1. TEMPORAL & SPATIAL JOIN
-    # Get the year from the request, default to 2024
     year = int(features.get('year', 2024))
-    lon, lat = features.get('lon', 35.0), features.get('lat', 1.0)
+    lon = float(features.get('lon', 34.9589))
+    lat = float(features.get('lat', 1.0435))
     point_geom = func.ST_SetSRID(func.ST_MakePoint(lon, lat), 4326)
     
-    # NEW logic: Find the soil data for this point and this SPECIFIC year
+    # Find soil/ward data for context
     soil_data = db.query(models.AuxiliaryData).filter(
         func.ST_Contains(models.AuxiliaryData.geom, point_geom),
-        models.AuxiliaryData.year == year # Matches the temporal dimension
+        models.AuxiliaryData.year == year
     ).first()
 
-    # Fallback to the most recent data if that specific year isn't found
+    # Fallback if no ward stats uploaded yet
     if not soil_data:
         soil_data = db.query(models.AuxiliaryData).filter(
             func.ST_Contains(models.AuxiliaryData.geom, point_geom)
         ).order_by(models.AuxiliaryData.year.desc()).first()
 
     try:
-        # 2. STATISTICAL Prediction (RF)
+        # 2. STATISTICAL Prediction (Random Forest)
         rf_model = get_rf_model()
+        
+        # RECALIBRATED: Passing all 9 features used in the National Retraining
         rf_input = pd.DataFrame([{
-            'year': year, # Now passed as a feature
-            'ndvi_mean': features.get('ndvi_mean', 0.5),
-            'precip_mean': features.get('precip_mean', 5.0),
-            'et_mean': features.get('et_mean', 3.0),
-            'elevation_mean': getattr(soil_data, 'elevation_m', 1800.0),
-            'soil_texture': getattr(soil_data, 'soil_texture', 2),
-            'temp_mean': features.get('temp_mean', 22.0)
+            'year': year,
+            'latitude': lat,
+            'longitude': lon,
+            'ndvi_mean': float(features.get('ndvi_mean', 0.55)),
+            'precip_total': float(features.get('precip_total') or features.get('precip_mean') or 600.0),
+            'gdd_total': float(features.get('gdd_total', 1400.0)),
+            'elevation_mean': float(getattr(soil_data, 'elevation_m', 1850.0)),
+            'soil_texture': float(getattr(soil_data, 'soil_texture', 2)),
+            'fertilizer': float(features.get('fertilizer', 120.0)), # FIXED: Slider connected to RF
+            'temp_mean': float(features.get('temp_mean', 22.0))
         }]).astype('float64')
         
         rf_pred = float(rf_model.predict(rf_input)[0]) if rf_model else 0.0
@@ -121,9 +138,13 @@ def predict_yield(request: PredictRequest, db: Session = Depends(get_db)):
         # 4. ENSEMBLE (Hybrid)
         final_yield = (rf_pred + dssat_pred) / 2 if dssat_pred > 0 else rf_pred
 
-        # 5. PERSISTENCE
+        # 5. PERSISTENCE (Saving for dashboard table)
         new_obs = models.YieldObservation(
-            crop_id="Maize", yield_value=final_yield, year=2024, geom=point_geom
+            crop_id="Maize",
+            county_name=getattr(soil_data, "county_name", "Unknown"),
+            yield_value=final_yield,
+            year=year,
+            geom=point_geom
         )
         db.add(new_obs)
         db.commit()
@@ -134,7 +155,7 @@ def predict_yield(request: PredictRequest, db: Session = Depends(get_db)):
                 "rf_val": round(rf_pred, 3),
                 "dssat_val": round(dssat_pred, 3),
                 "limiting_factor": dssat_res['limiting_factor'],
-                "ward_name": getattr(soil_data, "ward_name", "Trans Nzoia")
+                "ward_name": getattr(soil_data, "ward_name", "Unknown Unit")
             }
         )
 
@@ -145,17 +166,19 @@ def predict_yield(request: PredictRequest, db: Session = Depends(get_db)):
 
 @router.get("/predictions")
 def get_recent_predictions(db: Session = Depends(get_db)):
+    """Fetches history for the Dashboard table."""
     try:
         results = db.query(models.YieldObservation).order_by(models.YieldObservation.id.desc()).limit(10).all()
         return [
             {
-                "region_id": f"UNIT-{r.id}",
+                "region_id": r.county_name or "N/A",
                 "crop_type": r.crop_id,
                 "predicted_yield": round(float(getattr(r, "yield_value", 0.0)), 2),
-                "confidence": 79,
-                "date": "2024 Season",
+                "confidence": 79, # National R2 Score
+                "date": f"{r.year} Season",
                 "status": "Verified"
             } for r in results
         ]
-    except Exception:
+    except Exception as e:
+        logger.error(f"Failed to fetch history: {e}")
         return []

@@ -1,9 +1,0 @@
-upload
-node_modules
-frontend/node_modules
-database/init_mysql.sql
-sandbox.txt
-.venv
-ml_api/Data
-frontend_backup
-New folder

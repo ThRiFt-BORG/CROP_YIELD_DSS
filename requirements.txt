@@ -1,0 +1,38 @@
+# API
+fastapi
+uvicorn
+gunicorn
+python-multipart
+
+# AI / LLM
+openai
+python-dotenv
+
+# Data / ML
+numpy
+pandas
+scikit-learn
+joblib
+
+# Database
+sqlalchemy
+psycopg2-binary
+geoalchemy2
+
+# Geospatial
+shapely
+geopandas
+rasterio
+rio-tiler
+
+# STAC / Cloud
+pystac
+pystac-client
+requests
+boto3
+
+# Imaging
+Pillow
+
+# Crop Modelling
+DSSATTools==3.0.0

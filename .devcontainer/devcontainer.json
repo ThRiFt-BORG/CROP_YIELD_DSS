@@ -1,0 +1,25 @@
+{
+  "name": "Crop Yield DSS - Full Stack",
+  "dockerComposeFile": "../docker-compose.yml",
+  "service": "ml_api",
+  "workspaceFolder": "/workspace",
+  
+  "forwardPorts": [3000, 8000, 8001, 8002, 9000, 9001, 5432],
+  
+  "postCreateCommand": "echo '✅ Full Stack Dev Container Ready!' && echo 'Frontend should be available at http://localhost:3000'",
+  
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-toolsai.jupyter",
+        "ms-azuretools.vscode-docker",
+        "bradlc.vscode-tailwindcss"
+      ]
+    }
+  },
+  
+  "remoteUser": "root",
+  
+  "features": {}
+}
